@@ -2,5 +2,6 @@
 
 function q = Q0()
     % Change this configuration to visualize the arm's structure
-    q = [0 -pi/4 0 pi/2 0 pi/2 0];
+    %q = [0 -pi/4 0 pi/2 0 pi/2 0];
+    q = [-pi/4 pi/4 pi/4 pi/2 0 pi/2 0];
 end
