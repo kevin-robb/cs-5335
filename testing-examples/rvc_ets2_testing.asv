@@ -1,0 +1,21 @@
+%ch7 textbook examples
+import ETS2.* %2d robot arm
+a1 = 1; %length of this arm segment
+E = Rz('q1') * Tx(a1); %1R arm
+E.fkine(30, 'deg'); %forward kinematics with given joint angle.
+%E.teach %interactive gui of arm
+
+a1 = 1; a2 = 1;
+E = Rz('q1') * Tx(a1) * Rz('q2') * Tx(a2); %2R arm
+E.fkine( [30, 40], 'deg'); % forward kin from joint angle vector.
+%E.plot( [30, 40], 'deg') %non-interactive gui of arm
+E.structure %will print RR since it is 2R arm
+
+% new examples, page 205
+E = Rz('q1') * Tx(a1) * Rz('q2') * Tx(a2);
+syms q1 q2 real
+TE = E.fkine( [q1, q2] );
+% represent desired end-eff pos
+syms x y real
+e1 =  x == TE.t(1)
+e2 =  y == TE.t(2)

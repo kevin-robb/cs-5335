@@ -6,5 +6,16 @@
 %              (orientation is to be ignored)
 
 function q = Q2(f, qInit, posGoal)
-
+    K = 100; %number of iteration steps
+    stepsize = 0.05;
+    q = qInit;
+    for k = 1:K
+        % fwd kin with current choice of joint angles (extract position).
+        posCurrent = f.fkine(q).t;
+        dx = posGoal - posCurrent;
+        % only want part of jacobian about position.
+        J = f.jacob0(q, 'trans');
+        dq = stepsize * pinv(J) * dx;
+        q = q + dq';
+    end
 end
