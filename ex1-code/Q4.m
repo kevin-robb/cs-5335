@@ -11,13 +11,10 @@
 %                 (orientation is to be ignored)
 
 function traj = Q4(f, qInit, circle, velocity)
-    disp Q4_called
-    circle
     traj = qInit;
     % we will use Q3 to get a trajectory to each 
     % successive point at the desired velocity.
     for k = 1:size(circle,2)
-        k
         % current q will be last row of most recent trajectory.
         q = traj(end,:);
         % goal position will be next point on circle.
