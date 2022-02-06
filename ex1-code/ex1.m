@@ -83,6 +83,7 @@ function ex1(questionNum)
         circle = repmat(spherePos, 1, nTheta) + radius * [cos(theta); sin(theta); zeros(1, nTheta)];
 
         % Get initial arm pose at the start of the circle
+        circle(:,1)
         qInit = Q1(f1, circle(:,1));
 
         % Draw circle and arm
