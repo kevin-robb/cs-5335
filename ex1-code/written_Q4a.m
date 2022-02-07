@@ -2,10 +2,9 @@
 syms th1 th2 th3 L1 L2 L3
 % create the arm in 4-a.
 %L1 = 1; L2 = 1; L3 = 1;
-% frame 0 to 1
-L(1) = Revolute('d', L1, 'a', 0, 'alpha', pi/2); %incorporate theta1?
-L(2) = Revolute('d', 0, 'a', L2, 'alpha', 0); %theta=theta2?
-L(3) = Revolute('d', 0, 'a', L3, 'alpha', 0); %theta=theta3?
+L(1) = Revolute('d', L1, 'a', 0, 'alpha', pi/2);
+L(2) = Revolute('d', 0, 'a', L2, 'alpha', 0);
+L(3) = Revolute('d', 0, 'a', L3, 'alpha', 0);
 arm_a = SerialLink(L, 'name', 'arm_a');
 %arm_a
 %arm_a.plot([pi/4 0 pi/4])
