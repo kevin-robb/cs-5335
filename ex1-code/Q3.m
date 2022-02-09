@@ -18,7 +18,9 @@ function traj = Q3(f, qInit, posGoal, epsilon, velocity)
         % fwd kin with current choice of joint angles.
         posCurrent = f.fkine(q).t;
         % same as Q2 but replace step size by velocity.
-        dq = velocity * pinv(f.jacob0(q, 'trans')) * (posGoal - posCurrent);
+        dq = pinv(f.jacob0(q, 'trans')) * (posGoal - posCurrent);
+        % ensure dq is normalized to length 1, then multiply by velocity.
+        dq = velocity * (dq/norm(dq));
         q = q + dq';
         % append next move onto the trajectory.
         traj = [traj; q];
