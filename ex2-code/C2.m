@@ -10,5 +10,20 @@
 %                   == 0 otherwise
 
 function cspace = C2(robot, obstacles, q_grid)
-
+    % instantiate the config space with the desired dimensions.
+    cspace = q_grid + q_grid';
+    for q1 in q_grid
+        for q2 in q_grid
+            % get polyshapes for arm in this configuration.
+            [poly1, poly2, pivot1, pivot2] = q2poly(robot, [q1; q2]);
+            % check for any collisions with this configuration.
+            collision = intersect([poly1, poly2, obstacles]);
+            % update the grid based on the result.
+            if isempty(collision)
+                cspace()=0; % TODO change loops to use indexes so I can access the right cell to update
+            else
+                cspace()=1;
+            end
+        end
+    end
 end

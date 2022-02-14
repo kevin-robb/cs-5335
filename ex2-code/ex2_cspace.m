@@ -49,7 +49,7 @@ function cspace = ex2_cspace(questionNum, cspace)
         plot_obstacles(obstacles);
         % TODO: Implement this function
         C1(robot, q_start);
-        % C1(robot, q_goal);
+        %C1(robot, q_goal);
     end
     
     % ========== Question C2 ==========

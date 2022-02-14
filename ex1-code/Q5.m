@@ -26,7 +26,7 @@ function q = Q5(f1, f2, qInit, f1Target, f2Target)
         dx1 = f1Target-pos1;
         dx2 = f2Target-pos2;
         dq1 = stepsize * pinv(f1.jacob0(q(1:9), 'trans')) * dx1;
-        dq2 = pinv(f2.jacob0([q(1:7), q(10:11)], 'trans')) * dx2;
+        dq2 = stepsize * pinv(f2.jacob0([q(1:7), q(10:11)], 'trans')) * dx2;
         % convert back to single q representation. Ensure q(1:7) change
         % together, keeping the two arms aligned.
         dq1 = [dq1;0;0];
@@ -34,3 +34,10 @@ function q = Q5(f1, f2, qInit, f1Target, f2Target)
         q = q + dq1' + dq2';
     end
 end
+
+
+% best way to do this, as discussed in class, is to form one large jacobian
+% to do this in one step instead of 2.
+% i.e., [Jarm1(3x9), 0(3x2); Jarm2[1:7], 0(3x2), Jarm2[8:9]]
+% inverting this then gives all 11 needed angles to achieve both end
+% positions (so J will be 6x11).
