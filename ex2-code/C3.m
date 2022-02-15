@@ -20,30 +20,26 @@ function distances = C3(cspace, q_grid, q_goal)
     % set value of goal cell.
     distances(i_goal) = 2;
     % expand out from the goal, computing distances.
-    cells_to_expand = [i_goal];
+    cells_to_expand = i_goal;
     while ~isempty(cells_to_expand)
+        i_cur_cell = cells_to_expand(:,1);
         % add all adjacent unoccupied cells to the queue.
         for r = -1:1
         for c = -1:1
-            if distances(cells_to_expand(1) + [r;c]) == 0
+            try % use a try-catch since the indices may go out of range.
+            i_new_cell = i_cur_cell + [r;c];
+%             if i_new_cell(1)
+            if distances(i_new_cell(1),i_new_cell(2)) == 0
                 % increment distance and assign to neighboring free cells.
-                distances(cells_to_expand(1) + [r;c]) = distances(cells_to_expand(1)) + 1;
+                distances(i_new_cell(1),i_new_cell(2)) = distances(i_cur_cell(1),i_cur_cell(2)) + 1;
                 % add these newly explored cells to the queue.
-                cells_to_expand = [cells_to_expand, cells_to_expand(1) + [r;c]];
+                cells_to_expand = [cells_to_expand, i_new_cell];
             end
-            % remove expanded cell from queue.
-            cells_to_expand(:,1) = [];
+            catch % don't do anything, just pass.
+            end
         end
         end
+        % remove expanded cell from queue.
+        cells_to_expand(:,1) = [];
     end
 end
-
-
-% % % testing
-% poly1 = polyshape([0 0 0.4 0.4],[1 0 0 1]);
-% poly2 = polyshape([0.75 1.25 1.25 0.75],[0.25 0.25 0.75 0.75]);
-% plot(poly1)
-% hold on
-% plot(poly2)
-% polyout = intersect(poly1,poly2)
-% polyout.Vertices
