@@ -32,8 +32,12 @@ function num_collisions = C6(robot, obstacles, q_path)
         end
         if in_collision
             num_collisions = num_collisions + 1;
-            C1(robot,q_path(i-1,:)')
-            C1(robot,q_path(i,:)')
+            % plot the links before and after the collision.
+%             C1(robot,q_path(i-1,:)')
+%             C1(robot,q_path(i,:)')
+            % plot the violating swept volume.
+            plot(arm1_space, 'FaceColor', 'r');
+            plot(arm2_space, 'FaceColor', 'b');
         end
     end
 end

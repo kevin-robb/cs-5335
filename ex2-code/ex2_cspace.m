@@ -169,7 +169,7 @@ function cspace = ex2_cspace(questionNum, cspace)
         % imshow(1 - padded_cspace');
         % set(gca, 'YDir', 'normal');
         distances = C3(padded_cspace, q_grid, q_goal);
-        q_start = [5;5]; %TODO this is for debugging w/ diff starts.
+%         q_start = [5;5]; %TODO this is for debugging w/ diff starts.
         path = C4(distances, q_grid, q_start);
         % Uncomment to visualize distance transform and found path
 %         imshow(distances', [min(min(distances)), max(max(distances))]);
