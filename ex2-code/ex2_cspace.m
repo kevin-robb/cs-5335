@@ -90,7 +90,7 @@ function cspace = ex2_cspace(questionNum, cspace)
         distances = C3(cspace, q_grid, q_goal);
         % Find a path from q_start to q_goal using distance transform
         % TODO: Implement this function
-        q_start = [5;6]; %demonstrate a wrapping path.
+        %q_start = [5;6]; %demonstrate a wrapping path.
         path = C4(distances, q_grid, q_start);
         % Visualize distance transform
         imshow(distances', [min(min(distances)), max(max(distances))]);
@@ -170,10 +170,10 @@ function cspace = ex2_cspace(questionNum, cspace)
         distances = C3(padded_cspace, q_grid, q_goal);
         path = C4(distances, q_grid, q_start);
         % Uncomment to visualize distance transform and found path
-        % imshow(distances', [min(min(distances)), max(max(distances))]);
-        % hold on;
-        % scatter(path(:,1), path(:,2), 'rs', 'MarkerFaceColor', 'r');
-        % set(gca, 'YDir', 'normal');
+        imshow(distances', [min(min(distances)), max(max(distances))]);
+        hold on;
+        scatter(path(:,1), path(:,2), 'rs', 'MarkerFaceColor', 'r');
+        set(gca, 'YDir', 'normal');
         plot_obstacles(obstacles);
         % Convert path in discretized grid into configuration-space path
         q_path = C5(q_grid, q_start, q_goal, path);

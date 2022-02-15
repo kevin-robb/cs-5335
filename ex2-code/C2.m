@@ -23,13 +23,12 @@ function cspace = C2(robot, obstacles, q_grid)
             in_collision = false;
             % (poly1 and poly2 are allowed to collide with each other.)
             for i_ob = 1:size(obstacles,2)
+%                 in_collision = ~isempty(intersect(union(poly1,poly2), obstacles(i_ob)).Vertices);
+                in_collision = intersect(union(poly1,poly2), obstacles(i_ob)).NumRegions ~= 0;
                 if in_collision
                     % stop the loop if a collision is found.
                     break
                 end
-                col1 = ~isempty(intersect(poly1, obstacles(i_ob)).Vertices);
-                col2 = ~isempty(intersect(poly2, obstacles(i_ob)).Vertices);
-                in_collision = col1 || col2;
             end
             % update the grid based on the result.
             if in_collision
