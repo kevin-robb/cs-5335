@@ -90,6 +90,7 @@ function cspace = ex2_cspace(questionNum, cspace)
         distances = C3(cspace, q_grid, q_goal);
         % Find a path from q_start to q_goal using distance transform
         % TODO: Implement this function
+        q_start = [5;6]; %demonstrate a wrapping path.
         path = C4(distances, q_grid, q_start);
         % Visualize distance transform
         imshow(distances', [min(min(distances)), max(max(distances))]);

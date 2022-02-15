@@ -19,16 +19,17 @@ function distances = C3(cspace, q_grid, q_goal)
     i_goal = round(q_goal / (2*pi) * size(q_grid,2));
     % set value of goal cell.
     distances(i_goal) = 2;
+    % make list of modifiers for choosing neighbors ahead of time.
+    modifiers = [-1,-1,-1,0,0,1,1,1;-1,0,1,-1,1,-1,0,1];
     % expand out from the goal, computing distances.
     cells_to_expand = i_goal;
     while ~isempty(cells_to_expand)
         i_cur_cell = cells_to_expand(:,1);
         % add all adjacent unoccupied cells to the queue.
-        for r = -1:1
-        for c = -1:1
+        for m = 1:size(modifiers,2)
             % use modulo to allow neighbors to wrap around the cspace.
             % do a weird hacky thing to prevent zeros messing us up.
-            i_new_cell = mod(i_cur_cell + [r;c] - [1;1], size(q_grid,2)) + [1;1];
+            i_new_cell = mod(i_cur_cell + modifiers(:,m) - [1;1], size(q_grid,2)) + [1;1];
             % NOTE this makes the plot look different from the figure in
             % the assignment pdf, but wrapping should be possible so I'll
             % keep it this way. The plots match if I use a try/catch
@@ -39,7 +40,6 @@ function distances = C3(cspace, q_grid, q_goal)
                 % add these newly explored cells to the queue.
                 cells_to_expand = [cells_to_expand, i_new_cell];
             end
-        end
         end
         % remove expanded cell from queue.
         cells_to_expand(:,1) = [];
