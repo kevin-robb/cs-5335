@@ -140,6 +140,7 @@ function cspace = ex2_cspace(questionNum, cspace)
         % Compute distance transform from q_goal
         distances = C3(cspace, q_grid, q_goal);
         % Find a path from q_start to q_goal using distance transform
+%         q_start = [5;5]; %TODO this is for DEBUG
         path = C4(distances, q_grid, q_start);
         % Convert path in discretized grid into configuration-space path
         q_path = C5(q_grid, q_start, q_goal, path);
@@ -168,12 +169,13 @@ function cspace = ex2_cspace(questionNum, cspace)
         % imshow(1 - padded_cspace');
         % set(gca, 'YDir', 'normal');
         distances = C3(padded_cspace, q_grid, q_goal);
+        q_start = [5;5]; %TODO this is for debugging w/ diff starts.
         path = C4(distances, q_grid, q_start);
         % Uncomment to visualize distance transform and found path
-        imshow(distances', [min(min(distances)), max(max(distances))]);
-        hold on;
-        scatter(path(:,1), path(:,2), 'rs', 'MarkerFaceColor', 'r');
-        set(gca, 'YDir', 'normal');
+%         imshow(distances', [min(min(distances)), max(max(distances))]);
+%         hold on;
+%         scatter(path(:,1), path(:,2), 'rs', 'MarkerFaceColor', 'r');
+%         set(gca, 'YDir', 'normal');
         plot_obstacles(obstacles);
         % Convert path in discretized grid into configuration-space path
         q_path = C5(q_grid, q_start, q_goal, path);

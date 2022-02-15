@@ -36,7 +36,17 @@ function distances = C3(cspace, q_grid, q_goal)
             % instead to prevent wrapping.
             if distances(i_new_cell(1),i_new_cell(2)) == 0
                 % increment distance and assign to neighboring free cells.
-                distances(i_new_cell(1),i_new_cell(2)) = distances(i_cur_cell(1),i_cur_cell(2)) + 1;
+                incr_dist = 1;
+%                 % if this cell is right next to occluded space, penalize
+%                 % the distance further.
+%                 for m = 1:size(modifiers,2)
+%                     i_nbr = mod(i_new_cell + modifiers(:,m) - [1;1], size(q_grid,2)) + [1;1];
+%                     if distances(i_nbr(1),i_nbr(2)) == 1
+%                         incr_dist = incr_dist + 1;
+%                         break
+%                     end
+%                 end
+                distances(i_new_cell(1),i_new_cell(2)) = distances(i_cur_cell(1),i_cur_cell(2)) + incr_dist;
                 % add these newly explored cells to the queue.
                 cells_to_expand = [cells_to_expand, i_new_cell];
             end
