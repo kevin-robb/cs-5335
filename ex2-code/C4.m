@@ -29,7 +29,6 @@ function path = C4(distances, q_grid, q_start)
         for m = 1:size(modifiers,2)
             % use modulo to allow path to wrap around the cspace.
             % do a weird hacky thing to prevent zeros messing us up.
-%             i_nbr = i_cur + [r;c];
             i_nbr = mod(i_cur + modifiers(:,m) - [1;1], size(q_grid,2)) + [1;1];
             % minimize dist, and don't choose occluded neighbors.
             if (distances(i_nbr(1),i_nbr(2)) < min_dist) && (distances(i_nbr(1),i_nbr(2)) ~= 1)

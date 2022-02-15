@@ -13,5 +13,12 @@
 %                   the final row should be q_goal.
 
 function q_path = C5(q_grid, q_start, q_goal, path)
-
+    % path starts at the exact start configuration.
+    q_path = q_start';
+    for i = 1:size(path,1)
+        % convert each point in the path to a configuration.
+        q_path = [q_path; path(i,:)*(2*pi)/size(q_grid,2)];
+    end
+    % path ends at the exact goal configuration.
+    q_path = [q_path; q_goal'];
 end
