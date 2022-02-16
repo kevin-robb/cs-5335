@@ -44,14 +44,14 @@ function [path, path_found] = M3(robot, samples, adjacency, q_start, q_goal, lin
     while node_start == 0
         [~,j] = min(dist_to_start,[],'omitnan');
         dist_to_start(j) = NaN;
-        if ~check_edge(robot, q_start, samples(j,:), link_radius, sphere_centers, sphere_radii)
+        if ~check_edge(robot, q_start, samples(j,:), link_radius, sphere_centers, sphere_radii,50)
             node_start = j;
         end
     end
     while node_goal == 0
         [~,j] = min(dist_to_goal,[],'omitnan');
         dist_to_goal(j) = NaN;
-        if ~check_edge(robot, samples(j,:), q_goal, link_radius, sphere_centers, sphere_radii)
+        if ~check_edge(robot, samples(j,:), q_goal, link_radius, sphere_centers, sphere_radii,50)
             node_goal = j;
         end
     end
@@ -75,8 +75,8 @@ function [path, path_found] = M3(robot, samples, adjacency, q_start, q_goal, lin
     path_found = true;
     % convert the path from nodes to configurations.
     path = q_start;
-    for p = 1:size(node_path)
-        path = [path; samples(node_path(p),:)];
+    for p = 1:size(node_path,2)
+        path = [path; samples(node_path(1,p),:)];
     end
     path = [path; q_goal];
 end
