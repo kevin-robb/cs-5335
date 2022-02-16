@@ -45,7 +45,6 @@ function [samples, adjacency] = M2(robot, q_min, q_max, num_samples, num_neighbo
             end
         end
     end
-    distances
     % now we need to connect vertices with edges. each point will be
     % connected to its nearest `num_neighbors` neighbors if
     % collision-free paths exist.
