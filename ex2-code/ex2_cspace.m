@@ -37,7 +37,7 @@ function cspace = ex2_cspace(questionNum, cspace)
     q_start = [0.85; 0.9];
     q_goal = [3.05; 0.05];
     if nargin < 2
-        cspace_resolution = 100;
+        cspace_resolution = 225; %100;
     else
         cspace_resolution = size(cspace, 1);
     end
