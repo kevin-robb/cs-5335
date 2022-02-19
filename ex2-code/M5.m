@@ -14,10 +14,10 @@
 function smoothed_path = M5(robot, path, link_radius, sphere_centers, sphere_radii)
     % go front to back and try to skip as many unnecessary waypoints as
     % possible and build a more efficient path.
-    smoothed_path = [];
+    smoothed_path = path(1,:);
     i = 1; % can't use for loop since I want to change the index sometimes.
     while i < size(path,1)
-        i = i + 1;
+        temp_i = i;
         % add link i to the path. it's necessary if we get here.
         smoothed_path = [smoothed_path; path(i,:)];
         % try to find a connection to a point as far away as possible.
@@ -26,12 +26,16 @@ function smoothed_path = M5(robot, path, link_radius, sphere_centers, sphere_rad
                 disp('found shortcut from i to j');
                 i
                 j
-                % a path exists, so add j directly to the list.
-                smoothed_path = [smoothed_path; path(j,:)];
-                % update i=j to skip all intermediary points
+                % a path exists, update i=j to skip all intermediary points.
                 i = j;
                 break
             end
         end
+        % advance the index if nothing was found
+        if i == temp_i
+            i = i + 1;
+        end
+        % add this node to the new path.
+        smoothed_path = [smoothed_path; path(i,:)];
     end
 end
