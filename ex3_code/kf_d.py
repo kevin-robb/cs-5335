@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-
 import numpy as np
 
 ## Global Variables ##
@@ -13,7 +12,7 @@ def iter_kf(X_0, P_0, u, z):
     @param X_0, P_0 the prior (est. at time t)
     @param u the control input at time t
     @param z the measurement at time t+1
-    @ return X, P the posterior (est. at time t+1)
+    @return X, P the posterior (est. at time t+1)
     """
     # prediction step.
     X_predicted = F @ X_0 + G @ u

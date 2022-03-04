@@ -12,7 +12,7 @@ def iter_kf(x_0, sig_0, u, z):
     @param x_0, sig_0 the prior (est. at time t)
     @param u the control input at time t
     @param z the measurement at time t+1
-    @ return x, sig the posterior (est. at time t+1)
+    @return x, sig the posterior (est. at time t+1)
     """
     x_predicted = f*x_0 + g*u
     sig_predicted = f**2 * sig_0 + sig_v
