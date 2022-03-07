@@ -23,6 +23,8 @@ function [x_est, P_est, indices] = E2(odo, zind, z, W, x0)
     indices = []; x_est = {}; P_est = {};
     x_t = []; P_t = [];
     x_v = x0; % keep track of true robot position.
+    % we assume nominal case where noise means are 0, since not provided.
+    w_r = 0; w_b = 0;
     T = size(odo,2); % total # of timesteps.
     for t = 1:(T-1)
         % odom gives (dist, heading)^T
@@ -40,33 +42,61 @@ function [x_est, P_est, indices] = E2(odo, zind, z, W, x0)
             % check if this is a new one, or one we've seen before.
             if any(indices(:) == zind(1,t))
                 % this landmark is already in our state, so update it.
-                i = find(X==zind(1,t))*2 - 1; % index of this landmark in our state.
+                i = find(zind(1,t))*2 - 1; % index of this landmark in our state.
                 % get new measurement of its position.
-                p_i = [x_v(0) + r*cos(x_v(3)+beta);
-                     x_v(1) + r*sin(x_v(3)+beta)];
-                % compute jacobian matrices. TODO not sure whether to use
-                % x_v (veh pos), x_est(i:i+1) (existing state for this
-                % landmark), or p_i (new meas of this landmark).
-                dist = sqrt((p_i(1)-x_t(1))^2 + (p_i(2)-x_t(2))^2);
-                H_p = [-(p_i(1)-x_t(1))/dist, -(p_i(2)-x_t(2))/dist, 0;
-                       (p_i(2)-x_t(2))/(dist^2), -(p_i(1)-x_t(1))/(dist^2), -1];
-%                 H_x = [... H_p ...]
+                p_i = [x_v(1) + r*cos(x_v(3)+beta);
+                     x_v(2) + r*sin(x_v(3)+beta)];
+                % compute jacobian matrices.
+                % interested in pseudo measurements from true vehicle
+                % position x_v and the current belief (=prediction) for the
+                % landmark position x_t(i:i+1).
+                dist = sqrt((x_t(i)-x_v(1))^2 + (x_t(i+1)-x_v(2))^2);
+                H_p = [(x_t(i)-x_v(1))/dist, (x_t(i+1)-x_v(2))/dist;
+                       -(x_t(i+1)-x_v(2))/(dist^2), (x_t(i)-x_v(1))/(dist^2)];
+                % pad H_x if there are multiple landmarks being tracked.
+                n = size(x_t,1);
+                if n < 2 % this is the only landmark.
+                    H_x = H_p;
+                elseif i == 1 % this is the first, not only.
+                    H_x = [H_p, zeros(2,n-(i+1))]; % [H_p ...0]
+                elseif i == (n-1) % this is the last, not only
+                    H_x = [zeros(2,i-1), H_p]; % [0... H_p]
+                else % this is somewhere in the middle. not first or last.
+                    H_x = [zeros(2,i-1), H_p, zeros(2,n-(i+1))]; % [0... H_p ...0]
+                end
                 H_w = [1, 0; 0, 1];
-                % TODO update the state and the covariance.
+                % update the state and the covariance.
+                % compute innovation.
+                z_est = [dist; angdiff(atan2(x_t(i)-x_v(1), x_t(i+1)-x_v(2)) - x_v(3))];
+                nu = rb - z_est - [w_r; w_b];
+                % compute kalman gain.
+                S = H_x * P_t * H_x' + H_w * W * H_w';
+                K = P_t * H_x' * inv(S);
+                % update step.
+                x_t = x_t + K * nu;
+                P_t = P_t - K * H_x * P_t;
             else
+                n = size(x_t,1);
                 % this is a new landmark, so add it to our state.
-                g = [x_v(0) + r*cos(x_v(3)+beta);
-                     x_v(1) + r*sin(x_v(3)+beta)];
-                x_t = [x_t; g];
+                g = [x_v(1) + r*cos(x_v(3)+beta);
+                     x_v(2) + r*sin(x_v(3)+beta)];
+                if n < 2
+                    x_t = g;
+                else
+                    x_t = [x_t; g];
+                end
                 indices = [indices; zind(1,t)]; % add landmark index.
                 % compute jacobian matrices.
                 G_z = [cos(x_v(3)+beta), -r*sin(x_v(3)+beta);
                        sin(x_v(3)+beta), r*cos(x_v(3)+beta)];
-                n = size(x_est,1);
-                Y_z = [eye(n), zeros(n,2); 
-                       zeros(2,n), G_z];
                 % update covariance.
-                P_t = Y_z * [P_t, zeros(n,2); zeros(2,n), W] * Y_z';
+                if n < 2
+                    P_t = G_z * W * G_z';
+                else
+                    Y_z = [eye(n), zeros(n,2); 
+                           zeros(2,n), G_z];
+                    P_t = Y_z * [P_t, zeros(n,2); zeros(2,n), W] * Y_z';
+                end
             end
         end
         % set our estimate for time t+1.
