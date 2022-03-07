@@ -18,7 +18,6 @@ function [x_est, P_est] = E1(odo, zind, z, V, W, x0, P0, map)
     % get total num of timesteps T.
     T = size(odo,2);
     % create state/cov arrays and set first to init.
-%     x_est = cell(1,T); P_est = cell(1,T);
     x_est = {}; P_est = {};
     x_est{1} = x0; P_est{1} = P0;
     % we assume nominal case where noise means are 0, since not provided.
@@ -31,10 +30,6 @@ function [x_est, P_est] = E1(odo, zind, z, V, W, x0, P0, map)
         lm_i = zind(1,t);
         % we treat odom as command (dist, heading)^T
         u = odo(:,t); d_d = u(1); d_th = u(2);
-%         % get current est. state.
-%         x_t = x_est{1,t}; P_t = P_est{1,t};
-%         disp(x_t)
-%         disp(P_t)
         % compute jacobian matrices.
         F_x = [1, 0, -d_d*sin(x_t(3));
                0, 1, d_d*cos(x_t(3));
@@ -59,30 +54,24 @@ function [x_est, P_est] = E1(odo, zind, z, V, W, x0, P0, map)
             % compute remaining jacobian matrices.
             dist = sqrt((p_i(1)-x_t(1))^2 + (p_i(2)-x_t(2))^2);
             H_x = [-(p_i(1)-x_t(1))/dist, -(p_i(2)-x_t(2))/dist, 0;
-                   (p_i(2)-x_t(2))/dist^2, -(p_i(1)-x_t(1))/dist^2, -1];
+                   (p_i(2)-x_t(2))/(dist^2), -(p_i(1)-x_t(1))/(dist^2), -1];
             H_w = [1, 0; 0, 1];
             % compute innovation.
-            z_est = [sqrt((p_i(1)-x_t(1))^2 + (p_i(2)-x_t(2))^2);
-                    atan2(p_i(2)-x_t(2), p_i(1)-x_t(1)) - x_t(3)];
-            nu = rb - z_est + [w_r; w_b];
+            z_est = [dist; angdiff(atan2(p_i(2)-x_t(2), p_i(1)-x_t(1)) - x_t(3))];
+            nu = rb - z_est - [w_r; w_b];
             % compute kalman gain.
             S = H_x * P_predicted * H_x' + H_w * W * H_w';
-            K = P_predicted * H_x' / S; %inv(S)
+            K = P_predicted * H_x' * inv(S); %inv(S)
             % update step.
             x_t = x_predicted + K * nu;
             P_t = P_predicted - K * H_x * P_predicted;
         end
+        % keep heading in range (-pi,pi)
+        x_t(3) = angdiff(x_t(3));
         % set our estimate for time t+1.
         x_est{t+1} = x_t;
         P_est{t+1} = P_t;
     end
-%     disp(x_est)
-%     celldisp(x_est)
-%     disp(P_est)
-%     for t = 1:T
-%         t
-%         x_est{t}(1:3)
-%     end
 end
 % may be helpful to use functions atan2, angdiff.
 % I'm assuming from the data format that we can only observe one
