@@ -20,7 +20,7 @@ def iter_kf(X_0, P_0, u, z):
     # compute jacobians for observation matrix. (H_w=1)
     H_x = np.array([[2*X_predicted[0,0], 2*X_predicted[1,0]]])
     # update step.
-    innovation = z - (H_x @ X_predicted).item() # - noise?
+    innovation = z - (X_predicted[0,0]**2 + X_predicted[1,0]**2) # - noise?
     K_gain = P_predicted @ H_x.T / (H_x @ P_predicted @ H_x.T + sig_w).item()
     X = X_predicted + K_gain * innovation
     P = (np.eye(2) - K_gain @ H_x) @ P_predicted
@@ -38,6 +38,8 @@ X = np.array([[0,0]]).T
 P = np.array([[1,0],[0,1]])
 # iterate to get the state at timestep 3.
 for i in range(3):
+    # print("\nstep " + str(i) + " -> " + str(i+1))
     X, P = iter_kf(X, P, u[i], z[i+1])
+print("\nPosterior Distribution for t=3:")
 print("x:\n", X)
 print("P:\n", P)
