@@ -9,5 +9,17 @@
 %                  (with double maximum sensing range R = 8)
 
 function ekf_s = E4(V, W, x0, P0, range, fov)
-    
+    % SLAM code directly copied from E0.
+    rng(0);
+    map = LandmarkMap(20);
+    veh = Bicycle('covar', V, 'x0', x0);
+    veh.add_driver(RandomPath(map.dim));
+    sensor = RangeBearingSensor(veh, map, 'covar', W, 'angle', fov, 'range', range, 'animate');
+    ekf_s = EKF(veh, V, P0, sensor, W, []);
+    ekf_s.run(1000);
+    % plot stuff.
+%     map.plot();
+%     ekf_s.plot_map('g');
+%     ekf_s.plot_xy('r');
+%     veh.plot_xy('b');
 end
