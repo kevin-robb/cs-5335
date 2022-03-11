@@ -42,10 +42,10 @@ function [x_est, P_est, indices] = E2(odo, zind, z, W, x0)
             % check if this is a new one, or one we've seen before.
             if any(indices(:) == zind(1,t))
                 % this landmark is already in our state, so update it.
-                i = find(zind(1,t))*2 - 1; % index of this landmark in our state.
+                i = find(indices == zind(1,t))*2 - 1; % index of this landmark in our state.
                 % get new measurement of its position.
-                p_i = [x_v(1) + r*cos(x_v(3)+beta);
-                     x_v(2) + r*sin(x_v(3)+beta)];
+%                 p_i = [x_v(1) + r*cos(x_v(3)+beta);
+%                        x_v(2) + r*sin(x_v(3)+beta)];
                 % compute jacobian matrices.
                 % interested in pseudo measurements from true vehicle
                 % position x_v and the current belief (=prediction) for the
@@ -55,19 +55,12 @@ function [x_est, P_est, indices] = E2(odo, zind, z, W, x0)
                        -(x_t(i+1)-x_v(2))/(dist^2), (x_t(i)-x_v(1))/(dist^2)];
                 % pad H_x if there are multiple landmarks being tracked.
                 n = size(x_t,1);
-                if n < 2 % this is the only landmark.
-                    H_x = H_p;
-                elseif i == 1 % this is the first, not only.
-                    H_x = [H_p, zeros(2,n-(i+1))]; % [H_p ...0]
-                elseif i == (n-1) % this is the last, not only
-                    H_x = [zeros(2,i-1), H_p]; % [0... H_p]
-                else % this is somewhere in the middle. not first or last.
-                    H_x = [zeros(2,i-1), H_p, zeros(2,n-(i+1))]; % [0... H_p ...0]
-                end
+                H_x = zeros(2,n);
+                H_x(1:2,i:i+1) = H_p;
                 H_w = [1, 0; 0, 1];
                 % update the state and the covariance.
                 % compute innovation.
-                z_est = [dist; angdiff(atan2(x_t(i)-x_v(1), x_t(i+1)-x_v(2)) - x_v(3))];
+                z_est = [dist; angdiff(atan2(x_t(i+1)-x_v(2), x_t(i)-x_v(1)) - x_v(3))];
                 nu = rb - z_est - [w_r; w_b];
                 % compute kalman gain.
                 S = H_x * P_t * H_x' + H_w * W * H_w';
@@ -89,14 +82,10 @@ function [x_est, P_est, indices] = E2(odo, zind, z, W, x0)
                 % compute jacobian matrices.
                 G_z = [cos(x_v(3)+beta), -r*sin(x_v(3)+beta);
                        sin(x_v(3)+beta), r*cos(x_v(3)+beta)];
+                Y_z = eye(n+2);
+                Y_z(n+1:n+2,n+1:n+2) = G_z;
                 % update covariance.
-                if n < 2
-                    P_t = G_z * W * G_z';
-                else
-                    Y_z = [eye(n), zeros(n,2); 
-                           zeros(2,n), G_z];
-                    P_t = Y_z * [P_t, zeros(n,2); zeros(2,n), W] * Y_z';
-                end
+                P_t = Y_z * [P_t, zeros(n,2); zeros(2,n), W] * Y_z';
             end
         end
         % set our estimate for time t+1.
