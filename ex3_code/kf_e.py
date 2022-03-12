@@ -19,7 +19,7 @@ def iter_kf(x_0, P_0, u, z):
     x_predicted = F @ x_0 + G @ u
     P_predicted = F @ P_0 @ F.T + V
     # update step.
-    sig_w = (1/5)*(5-x_predicted[0,0])**2 + 0.01
+    sig_w = (1/2)*(5-x_predicted[0,0])**2 + 0.01
     W = np.array([[sig_w, 0],[0, sig_w]])
     innovation = z - H @ x_predicted
     K_gain = P_predicted @ H.T @ inv(H @ P_predicted @ H.T + W)
@@ -35,7 +35,7 @@ u = [np.array([[1.0,-1.0]]).T,
 # measurements.
 z = [None,
     np.array([[3.5,-1.0]]).T,
-    np.array([[5.3,-1.0]]).T,
+    np.array([[5.3,-0.5]]).T,
     np.array([[-2.0,0.0]]).T]
 # current state at t=0.
 x = np.array([[2,2]]).T
