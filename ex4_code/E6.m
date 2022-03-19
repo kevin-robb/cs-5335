@@ -5,6 +5,8 @@
 %                      odometry readings for T time steps
 
 function [x_truth, odo_truth] = E6(x0, T)
+    % odom constraints:
+    odom_d_max = 0.1; odom_th_max = 0.0546;
     % the map is not passed and we obviously need it,
     % so assume the default map.
     rng(0); map = LandmarkMap(20);
@@ -21,8 +23,10 @@ function [x_truth, odo_truth] = E6(x0, T)
         end
     end
     % build directed graph using nearest neighbors approach.
-    G = digraph();
     cur_node = cur_goal; % start where we decided above.
+    % store path of indexes and points to include x0.
+    lm_path = [cur_node]; % track path as a 1xN vector.
+%     pt_path = [x0(1:2), map.landmark(cur_node)];
     unvisited = 1:map.nlandmarks; 
     unvisited = unvisited(unvisited~=cur_node);
     cur_goal = 0; cur_dist = -1;
@@ -36,16 +40,72 @@ function [x_truth, odo_truth] = E6(x0, T)
             end
         end
         % add this edge.
-        G = addedge(G, cur_node, cur_goal);
-        % mark node as visited and update current to there.
+        lm_path = [lm_path, cur_goal];
+%         pt_path = [pt_path, map.landmark(cur_goal)];
+        % mark node as visited and update current.
         cur_node = cur_goal;
         unvisited = unvisited(unvisited~=cur_node);
         cur_goal = 0; cur_dist = -1;
     end
-    plot(G) %DEBUG
-    % traverse our graph to generate actual trajectory.
 
-%     for t = 1:T
-%         
-%     end
+    % traverse our graph to generate actual trajectory.
+    t = 1; x_v = x0;
+    while ~isempty(lm_path) && t <= T
+        % if we're pretty close to our current goal, remove it
+        % to mark it done. first entry is always the goal.
+        if norm(x_v(1:2) - map.landmark(lm_path(1))) < 1.7
+            lm_path(1) = [];
+        else % move towards current goal.
+            % compute vector from veh position to the landmark.
+            diff_vec = map.landmark(lm_path(1)) - x_v(1:2);
+            % extract range and bearing.
+            r = norm(diff_vec); % range.
+            b = atan2(diff_vec(2), diff_vec(1)); % global bearing.
+            beta = angdiff(b - x_v(3)); % bearing relative to robot.
+            % choose odom cmd based on constraints.
+            r = min(r, odom_d_max); % always positive.
+            if abs(beta) > odom_th_max
+                % cap angle magnitude but keep sign.
+                beta = odom_th_max * beta / abs(beta);
+            end
+            odom = [r; beta];
+            % update vehicle position given this odom.
+            x_v = [x_v(1) + r*cos(x_v(3));
+                   x_v(2) + r*sin(x_v(3));
+                   x_v(3) + beta];
+            % add these to the trajectory.
+            x_truth(:,t) = x_v;
+            odo_truth(:,t) = odom;
+            t = t+1;
+        end
+    end
+%     t
+    % keep robot stationary for remainder of timesteps.
+    while t <= T
+        x_truth(:,t) = x_v;
+        odo_truth(:,t) = [0; 0];
+        t = t+1;
+    end
+
 end
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
