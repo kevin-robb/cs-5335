@@ -13,7 +13,7 @@ function [x_truth, odo_truth] = E6(x0, T)
     % instantiate the trajectory.
     x_truth = zeros(3,T); odo_truth = zeros(2,T);
     % first pass attempt: just design a trajectory to pass through all
-    % landmarks. treat as travelling salesman problem.
+    % landmarks. treat as travelling salesman problem, and use NN heuristic.
     % choose nearest landmark to initial pose as 1st node.
     cur_goal = 1; cur_dist = norm(map.landmark(cur_goal) - x0(1:2));
     for i_lm = 1:map.nlandmarks
@@ -24,9 +24,8 @@ function [x_truth, odo_truth] = E6(x0, T)
     end
     % build directed graph using nearest neighbors approach.
     cur_node = cur_goal; % start where we decided above.
-    % store path of indexes and points to include x0.
+    % store path of landmark indexes to visit in order.
     lm_path = [cur_node]; % track path as a 1xN vector.
-%     pt_path = [x0(1:2), map.landmark(cur_node)];
     unvisited = 1:map.nlandmarks; 
     unvisited = unvisited(unvisited~=cur_node);
     cur_goal = 0; cur_dist = -1;
@@ -41,7 +40,6 @@ function [x_truth, odo_truth] = E6(x0, T)
         end
         % add this edge.
         lm_path = [lm_path, cur_goal];
-%         pt_path = [pt_path, map.landmark(cur_goal)];
         % mark node as visited and update current.
         cur_node = cur_goal;
         unvisited = unvisited(unvisited~=cur_node);
@@ -50,10 +48,13 @@ function [x_truth, odo_truth] = E6(x0, T)
 
     % traverse our graph to generate actual trajectory.
     t = 1; x_v = x0;
-    while ~isempty(lm_path) && t <= T
+    while t <= T
+        % first entry in lm_path is always the goal.
         % if we're pretty close to our current goal, remove it
-        % to mark it done. first entry is always the goal.
+        % to mark it done, and add it to the end so we can loop
+        % around if time allows.
         if norm(x_v(1:2) - map.landmark(lm_path(1))) < 1.7
+            lm_path = [lm_path, lm_path(1)];
             lm_path(1) = [];
         else % move towards current goal.
             % compute vector from veh position to the landmark.
@@ -79,14 +80,6 @@ function [x_truth, odo_truth] = E6(x0, T)
             t = t+1;
         end
     end
-%     t
-    % keep robot stationary for remainder of timesteps.
-    while t <= T
-        x_truth(:,t) = x_v;
-        odo_truth(:,t) = [0; 0];
-        t = t+1;
-    end
-
 end
 
 
