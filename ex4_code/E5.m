@@ -67,6 +67,7 @@ function [odo, zind, z] = E5(odo_truth, map, V, W, x0, range, fov, mode)
                 z{t} = [];
                 continue
             end
+            % choose one visible landmark at random.
             n_vis = size(visible_landmarks,1);
             i_choice = randi([1, n_vis]);
             lm_true = visible_landmarks(i_choice,:);
@@ -77,6 +78,48 @@ function [odo, zind, z] = E5(odo_truth, map, V, W, x0, range, fov, mode)
             % set measurements for this timestep.
             zind{t} = lm_true(1);
             z{t} = lm_meas';
-        end % TODO else if other modes
+        elseif mode == 'a' % use all visible landmarks
+            if isempty(visible_landmarks) % no landmarks are detected.
+                zind{t} = [];
+                z{t} = [];
+                continue
+            end
+            % add noise to each and use all visible landmarks.
+            zind_list = []; z_list = [];
+            n_vis = size(visible_landmarks,1);
+            for i = 1:n_vis
+                lm_true = visible_landmarks(i,:);
+                % add noise to the landmark measurement.
+                mu_w = [0, 0]; R = chol(W);
+                lm_noise = repmat(mu_w,1,1) + randn(1,2)*R;
+                lm_meas = lm_true(2:3) + lm_noise;
+                % add this landmark to our lists.
+                zind_list = [zind_list, lm_true(1)];
+                z_list = [z_list, lm_meas'];
+            end
+            % set measurements for this timestep.
+            zind{t} = zind_list;
+            z{t} = z_list;
+        end % TODO elseif mode == 'f' % false positives are possible.
     end
 end
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

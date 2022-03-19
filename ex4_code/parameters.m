@@ -11,12 +11,12 @@ function [V, W, x0, P0, range, fov, T, num_trials] = parameters()
     % Initial covariance
     P0 = diag([.01 .01, 0.005].^2);
     % Maximum range of sensor
-    range = 4;
+    range = 4; % def = 4
     % Field of view of sensor
-    fov = [-pi/2 pi/2];
+    fov = [-pi/2 pi/2]; % def = [-pi/2 pi/2]
     % Number of timesteps
     T = 1000;
     % Number of trials to run
-    num_trials = 1;
+    num_trials = 1; % def = 1
     
 end

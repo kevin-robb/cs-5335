@@ -22,6 +22,7 @@ function [x_truth, odo_truth] = E6(x0, T)
             cur_dist = norm(map.landmark(i_lm) - x0(1:2));
         end
     end
+
     % build directed graph using nearest neighbors approach.
     cur_node = cur_goal; % start where we decided above.
     % store path of landmark indexes to visit in order.
@@ -67,7 +68,7 @@ function [x_truth, odo_truth] = E6(x0, T)
             r = min(r, odom_d_max); % always positive.
             if abs(beta) > odom_th_max
                 % cap angle magnitude but keep sign.
-                beta = odom_th_max * beta / abs(beta);
+                beta = odom_th_max * sign(beta);
             end
             odom = [r; beta];
             % update vehicle position given this odom.
