@@ -25,5 +25,105 @@
 %                    and the next two rows correspond to landmark 4, etc.
 
 function [x_est, P_est, indices] = E8(odo, zind, z, V, W, range, fov, x0, P0)
+    % BEARING-ONLY SLAM. Need to get 2x2 from W.
+    W_b = [(range/2)^2, 0; 0, W];
 
+    indices = []; x_est = {}; P_est = {};
+    x_est{1} = x0; P_est{1} = P0;
+    x_t = x0; P_t = P0;
+    % we assume nominal case where noise means are 0.
+    v_d = 0; v_th = 0; w_r = 0; w_b = 0;
+    T = size(odo,2); % total # of timesteps.
+    for t = 1:(T-1)
+        % odom gives (dist, heading)^T "command"
+        u = odo(:,t); d_d = u(1); d_th = u(2);
+        % compute jacobian matrices.
+        F_xv = [1, 0, -d_d*sin(x_t(3));
+                0, 1, d_d*cos(x_t(3));
+                0, 0, 1];
+        F_x = eye(size(x_t,1));
+        F_x(1:3,1:3) = F_xv;
+        F_vv = [cos(x_t(3)), 0;
+               sin(x_t(3)), 0;
+               0, 1];
+        F_v = zeros(size(x_t,1),2);
+        F_v(1:3,1:2) = F_vv;
+        % make prediction. (only the veh position is expected to change)
+        x_predicted = x_t;
+        x_predicted(1) = x_t(1) + (d_d + v_d)*cos(x_t(3));
+        x_predicted(2) = x_t(2) + (d_d + v_d)*sin(x_t(3));
+        x_predicted(3) = x_t(3) + d_th + v_th;
+        % predict covariance.
+        P_predicted = F_x * P_t * F_x' + F_v * V * F_v';
+        % update step, using landmark measurements.
+        if ~isempty(zind{1,t})
+            % at least one landmark was detected this timestep.
+            % we can simply run the update step once for each landmark.
+            num_landmarks_detected = size(zind{1,t},2);
+            for i_lm = 1:num_landmarks_detected
+                % extract one landmark observation, and perform EKF update.
+                lm_ind = zind{1,t}(i_lm);
+                % BEARING-ONLY SLAM: CANNOT USE r (already removed from z).
+                beta = z{1,t}(1,i_lm);
+                % use mean range as our range "measurement".
+                r = range/2; rb = [r; beta]; 
+
+                % check if this is a new one, or one we've seen before.
+                if any(indices(:) == lm_ind)
+                    % this landmark is already in our state, so update it.
+                    i = find(indices == lm_ind)*2 - 1 + 3; % index of this landmark in our state.
+                    % get new measurement of its position.
+    %                 p_i = [x_predicted(1) + r*cos(x_predicted(3)+beta);
+    %                        x_predicted(2) + r*sin(x_predicted(3)+beta)];
+                    % compute jacobian matrices.
+                    % interested in pseudo measurements from predicted vehicle
+                    % position x_predicted and the current belief (=prediction) for the
+                    % landmark position x_t(i:i+1).
+                    dist = sqrt((x_t(i)-x_predicted(1))^2 + (x_t(i+1)-x_predicted(2))^2);
+                    H_xv = [-(x_t(i)-x_predicted(1))/dist, -(x_t(i+1)-x_predicted(2))/dist, 0;
+                            (x_t(i+1)-x_predicted(2))/(dist^2), -(x_t(i)-x_predicted(1))/(dist^2), -1];
+                    H_xp = [(x_t(i)-x_predicted(1))/dist, (x_t(i+1)-x_predicted(2))/dist;
+                           -(x_t(i+1)-x_predicted(2))/(dist^2), (x_t(i)-x_predicted(1))/(dist^2)];
+                    H_x = zeros(2,size(x_t,1));
+                    H_x(1:2,1:3) = H_xv;
+                    H_x(1:2,i:i+1) = H_xp;
+                    H_w = [1, 0; 0, 1];
+                    % update the state and the covariance.
+                    % compute innovation.
+                    z_est = [dist; angdiff(atan2(x_t(i+1)-x_predicted(2), x_t(i)-x_predicted(1)) - x_predicted(3))];
+                    nu = rb - z_est - [w_r; w_b];
+                    % compute kalman gain.
+                    S = H_x * P_predicted * H_x' + H_w * W_b * H_w';
+                    K = P_predicted * H_x' * inv(S);
+                    % update step.
+                    x_predicted = x_predicted + K * nu;
+                    P_predicted = P_predicted - K * H_x * P_predicted;
+                else
+                    n = size(x_t,1);
+                    % this is a new landmark, so add it to our state.
+                    g = [x_predicted(1) + r*cos(x_predicted(3)+beta);
+                         x_predicted(2) + r*sin(x_predicted(3)+beta)];
+                    x_predicted = [x_predicted; g]; % add to state.
+                    indices = [indices; lm_ind]; % add landmark index.
+                    % compute jacobian matrices.
+                    G_z = [cos(x_predicted(3)+beta), -r*sin(x_predicted(3)+beta);
+                           sin(x_predicted(3)+beta), r*cos(x_predicted(3)+beta)];
+                    Y_z = eye(n+2);
+                    Y_z(n+1:n+2,n+1:n+2) = G_z;
+                    % update covariance.
+                    P_predicted = Y_z * [P_predicted, zeros(n,2); zeros(2,n), W_b] * Y_z';
+                end
+                % update the state now that all landmarks have been used.
+                x_t = x_predicted;
+                P_t = P_predicted;
+            end
+        else
+            % no landmark was detected, so we have no measurement to use.
+            x_t = x_predicted;
+            P_t = P_predicted;
+        end
+        % set our estimate for time t+1.
+        x_est{t+1} = x_t;
+        P_est{t+1} = P_t;
+    end
 end
