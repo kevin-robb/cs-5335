@@ -24,10 +24,14 @@ options=optimset('MaxIter',100000,'MaxFunEvals',100000);
 % [traj(1:T), traj(T+1:2*T), traj(2*T+1:3*T)]
 
 %%%%%%%%%%%%%%%%%%%%% PLOT TRAJECTORY %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% 'MarkerSize', traj(2*T+1:3*T)
-plot(traj(1:T), traj(T+1:2*T), '-o')
-% show start and end points.
+plot(traj(1:T), traj(T+1:2*T), '-o', 'MarkerSize', 3)
+% plot markers separately with size dependent on variance.
 hold on
+for i = 1:T
+    plot(traj(i), traj(T+i), 'ro', 'MarkerSize', 100*traj(2*T+i))
+end
+% show start and end points.
+% hold on
 title(strcat("Optimized Trajectory. Cost=",num2str(traj_cost)))
 plot(x_start(1),x_start(2),'r*')
 text(x_start(1),x_start(2),'\leftarrow Start')
