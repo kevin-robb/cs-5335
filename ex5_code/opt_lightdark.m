@@ -9,6 +9,10 @@ Aeq = zeros(6,3*T); % select out the points we want to check.
 Aeq(1,1) = 1; Aeq(2,T+1) = 1; Aeq(3,2*T+1) = 1;
 Aeq(4,T) = 1; Aeq(5,2*T) = 1; Aeq(6,3*T) = 1;
 Beq = [x_start; x_goal]; % 6x1.
+% ensure variance is positive and greater than epsilon.
+variance_epsilon = 0.0001; % minimum allowable variance.
+A = -eye(3*T); A = A(2*T+1:3*T, 1:3*T); % Tx3T.
+B = zeros(T,1) - variance_epsilon; % Tx1.
 % set nonlinear constraint function.
 max_control = 0.5; % constraint for max of a single control.
 process_variance = 0.01; % variance increase in prediction step.
@@ -19,7 +23,7 @@ cost_fun = @(x) cost_fn_c(x);
 
 %%%%%%%%%%%%%%% RUN TRAJECTORY OPTIMIZATION %%%%%%%%%%%%%%%%%%%%%%%%%%%%
 options=optimset('MaxIter',100000,'MaxFunEvals',100000);
-[traj,traj_cost] = fmincon(cost_fun, x, [], [], Aeq, Beq, [], [], nl_con_fn, options);
+[traj,traj_cost] = fmincon(cost_fun, x, A, B, Aeq, Beq, [], [], nl_con_fn, options);
 % Aeq * traj
 % [traj(1:T), traj(T+1:2*T), traj(2*T+1:3*T)]
 
@@ -32,7 +36,7 @@ for i = 1:T
 end
 % show start and end points.
 % hold on
-title(strcat("Optimized Trajectory. Cost=",num2str(traj_cost)))
+title(strcat("Optimized Trajectory. T=",num2str(T),". Cost=",num2str(traj_cost)))
 plot(x_start(1),x_start(2),'r*')
 text(x_start(1),x_start(2),'\leftarrow Start')
 plot(x_goal(1),x_goal(2),'r*')
