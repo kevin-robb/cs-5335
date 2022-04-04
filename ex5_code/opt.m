@@ -1,3 +1,4 @@
+% Code for OPT-a and OPT-b.
 %%%%%%%%%%%%%%%%%%%%%%%% CONSTRAINTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 x_start = [2; 2]; x_goal = [4; 0];
 T = 20; % # of timesteps.
