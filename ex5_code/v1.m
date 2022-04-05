@@ -10,9 +10,10 @@ scene = imageDatastore(image_dir);
 num_images = numel(scene.Files);
 % read in template of book cover.
 I_template = iread('catch_22_template.jpg'); %'mono','double'
+I_template = scale_down_img(I_template, 3.7);
 %%%%%%%%%%%%%%%%%% DETECT FEATURES IN EACH IMAGE %%%%%%%%%%%%%%%%%%
 % first get features from template.
-sf_template = isurf(I_template, 'nfeat', 1000);
+sf_template = isurf(I_template, 'nfeat', 800);
 % show template with its features.
 figure;
 idisp(I_template); sf_template.plot_scale('g');
@@ -21,24 +22,38 @@ idisp(I_template); sf_template.plot_scale('g');
 for n = 1:num_images
     I = readimage(scene, n);
     % detect SURF features.
-    sf = isurf(I, 'nfeat', 1000);
+    sf = isurf(I, 'nfeat', 800);
     % show features on image.
     figure;
     idisp(I); sf.plot_scale('g');
     % match features with template.
     [m,correspondences] = sf_template.match(sf);
+    % show matches.
+    idisp({I_template, I}, 'dark');
+    m.subset(100).plot('w');
     % TODO use RANSAC to compute homography between template and I.
     % TODO decompose homography into rotation and translation.
-    if n == 1
-%         tf_prev = tf;
-        correspondences_prev = correspondences;
-%         I_prev = I;
-%         sf_prev = sf;
-        continue
+    if n > 1
+        % use tf_prev and tf to compute I_prev -> I.
+        % TODO if tf in SE(3),
+    %     tf_images = inv(tf_prev) * tf;
+        % TODO to display matches, maybe use correspondences for each to match
+        % features between the images, using template as intermediary.
     end
-    % use tf_prev and tf to compute I_prev -> I.
-    % TODO if tf in SE(3),
-%     tf_images = inv(tf_prev) * tf;
-    % TODO to display matches, maybe use correspondences for each to match
-    % features between the images, using template as intermediary.
+    % save things for "previous image" on next iteration.
+%     tf_prev = tf;
+    correspondences_prev = correspondences;
+    I_prev = I;
+    sf_prev = sf;
+end
+
+
+
+%%%%%%%%%%%%%%%%%%% FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%
+% Function to scale down an image by N.
+function outputImage = scale_down_img(inputImage, N)
+    [rows, columns, ~] = size(inputImage);
+    numOutputRows = round(rows/N);
+    numOutputColumns = round(columns/N);
+    outputImage = imresize(inputImage, [numOutputRows, numOutputColumns]);
 end
