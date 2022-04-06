@@ -5,6 +5,15 @@ close all;
 % im2 = iread('filename1.jpg','mono','double');
 image_dir = "book_images/";
 scene = imageDatastore(image_dir);
+
+%-----------------------------------------------------------------
+% % Even his example in the ransac function does not execute without errors.
+% f1 = isurf(readimage(scene,1));
+% f2 = isurf(readimage(scene,2));
+% m = f1.match(f2);
+% m.ransac( @fmatrix, 1e-4);
+%-----------------------------------------------------------------
+
 % scene = imageDatastore(strcat('Coursework/cs5335/ex5_code/',image_dir));
 % display images in one figure.
 % montage(scene.Files);
@@ -33,8 +42,11 @@ for n = 1:num_images
     idisp({I_template, I}, 'dark');
     m.subset(100).plot('w');
     % TODO use RANSAC to compute homography between template and I.
-%     m.ransac(@homography, 1e-4)
-    tf_new = tf_ransac(m)
+%     m.ransac(@fmatrix, 1e-4)
+    [transform, tf_set_1] = tf_ransac(m);
+    % show these transformed points on the plot for visual inspection.
+    hold on
+    scatter(tf_set_1(1,:), tf_set_1(2,:))
     % TODO decompose homography into rotation and translation.
     if n > 1
         % use tf_prev and tf to compute I_prev -> I.
@@ -54,44 +66,69 @@ end
 
 %%%%%%%%%%%%%%%%%%% FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%
 % Function to perform RANSAC to obtain a transform between pairs of images.
-% @param matches: set of matching points from template to image.
-function transform = tf_ransac(matches)
+% @param matches: FeatureMatch object from template to image.
+function [transform, transformed_set_1] = tf_ransac(matches)
+    % config parameters.
+    GROUP_SIZE = 40;
+    EPSILON = 20; % (in pixels) tolerance for a tf being ok for a pair.
+    TAU = 0.0001; % threshhold for ratio that tf works for. (ideally like 0.9)
     % assume a linear affine transform will suffice;
     % i.e., one translation and a rotation about a single point.
     transform = SE2();
-    group_size = 10;
     full_set_1 = matches.p1; full_set_2 = matches.p2;
-    % TODO loop the rest until tf is good.
-
-    % choose random set of points.
-    indexes = randi([1,group_size],group_size,1);
-    set_1 = zeros(2,group_size); set_1 = zeros(2,group_size);
-    for i = 1:group_size
-        set_1(:,i) = full_set_1(:,indexes(i,1));
-        set_2(:,i) = full_set_2(:,indexes(i,1));
+    total_size = size(full_set_1, 2);
+    % loop the rest until tf is good.
+    ratio_in_tolerance = 0;
+    while ratio_in_tolerance < TAU
+        % choose random set of points.
+        indexes = randi([1,total_size],GROUP_SIZE,1);
+        set_1 = zeros(2,GROUP_SIZE); set_2 = zeros(2,GROUP_SIZE);
+        for i = 1:GROUP_SIZE
+            set_1(:,i) = full_set_1(:,indexes(i,1));
+            set_2(:,i) = full_set_2(:,indexes(i,1));
+        end
+        % first, compute center of gravity for each set to get translation.
+        cg_1 = [sum(set_1(1)); sum(set_1(2))] / GROUP_SIZE
+        cg_2 = [sum(set_2(1)); sum(set_2(2))] / GROUP_SIZE
+    %     translation = cg_2 - cg_1;
+        % next, center the sets of points at 0 so we can compute the rotation.
+        set_1 = set_1 - cg_1; set_2 = set_2 - cg_2;
+        % compute the matrix N.
+        N = zeros(2,2);
+        for i=1:GROUP_SIZE
+            N = N + set_1(:,i) * set_2(:,i)';
+        end
+        % find the singular value decomposition of N.
+        [U,S,V] = svd(N); % N=U*S*V'
+        % compute the rotation matrix.
+        R = V * U';
+    %     % extract the rotation angle.
+        alpha = atan2(R(2,1), R(1,1))
+        % now we can build our SE3 transformation matrix.
+        t1 = SE2(-cg_1(1), -cg_1(2));
+        t2 = SE2(R);
+        t3 = SE2(cg_2(1), cg_2(2));
+        transform = t3 * t2 * t1
+        
+        % check how many points fit within a tolerance using this tf.
+        num_in_tolerance = 0;
+        transformed_set_1 = zeros(2,total_size);
+        for i = 1:total_size
+            affine_tf_pt = transform.T * [full_set_1(:,i); 1];
+            transformed_set_1(:,i) = affine_tf_pt(1:2);
+            if EPSILON > norm(affine_tf_pt(1:2) - full_set_2(:,i))
+                num_in_tolerance = num_in_tolerance + 1;
+            end
+        end
+        % compute ratio of inliers to total points.
+        ratio_in_tolerance = num_in_tolerance / total_size;
     end
-    % first, compute center of gravity for each set to get translation.
-    cg_1 = [sum(set_1(1)); sum(set_1(2))] / group_size;
-    cg_2 = [sum(set_2(1)); sum(set_2(2))] / group_size;
-    translation = cg_2 - cg_1;
-    % next, center the sets of points at 0 so we can compute the rotation.
-    set_1 = set_1 - cg_1; set_2 = set_2 - cg_2;
-    % compute the matrix N.
-    N = zeros(2,2);
-    for i=1:group_size
-        N = N + set_1(:,i) * set_2(:,i)';
-    end
-    % find the singular value decomposition of N.
-    [U,S,V] = svd(N); % N=U*S*V'
-    % compute the rotation matrix.
-    R = V * U';
-%     % extract the rotation angle.
-%     alpha = atan2(R(2,1), R(1,1));
-    % now we can build our SE3 transformation matrix.
-    t1 = SE2(-cg_1(1), -cg_1(2));
-    t2 = SE2(R);
-    t3 = SE2(cg_2(1), cg_2(2));
-    transform = t1 * t2 * t3;
+%     % show matches from transform.
+%     tf_matches = FeatureMatch(matches.p1, transformed_set_1);
+% %     matches.p2 = transformed_set_1;
+%     figure;
+%     idisp({I_template, I}, 'dark');
+%     tf_matches.subset(100).plot('w');
 end
 
 
