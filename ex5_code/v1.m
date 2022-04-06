@@ -134,7 +134,8 @@ end
 % Function to estimate the homography between two sets of points
 % with known data association.
 % @param set_1, set_2: two 2xN double arrays.
-% @return transform: SE2 homography.
+% @return transform: SE2 homography which can be 
+% applied to set_1 to approximate set_2.
 function transform = estimate_transform(set_1, set_2)
     GROUP_SIZE = size(set_1, 2);
     % first, compute center of gravity for each set to get translation.
@@ -143,12 +144,12 @@ function transform = estimate_transform(set_1, set_2)
     % next, center the sets of points at 0 so we can compute the rotation.
     set_1 = set_1 - cg_1; set_2 = set_2 - cg_2;
     % compute the matrix N.
-    N = zeros(2,2);
+    W = zeros(2,2);
     for i=1:GROUP_SIZE
-        N = N + set_1(:,i) * set_2(:,i)';
+        W = W + set_1(:,i) * set_2(:,i)';
     end
     % find the singular value decomposition of N.
-    [U,S,V] = svd(N); % N=U*S*V'
+    [U,S,V] = svd(W); % N=U*S*V'
     % compute the rotation matrix.
     R = V * U';
     % extract the rotation angle.
