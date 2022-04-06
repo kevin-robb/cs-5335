@@ -5,24 +5,14 @@ close all;
 % im2 = iread('filename1.jpg','mono','double');
 image_dir = "book_images/";
 scene = imageDatastore(image_dir);
-
-%-----------------------------------------------------------------
-% % Even his example in the ransac function does not execute without errors.
-% f1 = isurf(readimage(scene,1));
-% f2 = isurf(readimage(scene,2));
-% m = f1.match(f2);
-% m.ransac( @fmatrix, 1e-4);
-%-----------------------------------------------------------------
-
 % scene = imageDatastore(strcat('Coursework/cs5335/ex5_code/',image_dir));
-% display images in one figure.
-% montage(scene.Files);
+% montage(scene.Files); % display images in one figure.
 num_images = numel(scene.Files);
 % read in template of book cover.
-I_template = iread('catch_22_template.jpg'); %'mono','double'
+I_template = iread('catch_22_template.jpg');
 I_template = scale_down_img(I_template, 3.7);
 t_h = size(I_template, 1); t_w = size(I_template, 2);
-%%%%%%%%%%%%%%%%%% DETECT FEATURES IN EACH IMAGE %%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % first get features from template.
 sf_template = isurf(I_template, 'nfeat', 800);
 % show template with its features.
@@ -34,26 +24,22 @@ for n = 1:num_images
     I = readimage(scene, n);
     % detect SURF features.
     sf = isurf(I, 'nfeat', 800);
-    % show features on image.
+    % show features on one image.
 %     figure;
 %     idisp(I); sf.plot_scale('g');
     % match features with template.
-    [m,correspondences] = sf_template.match(sf);
+    [m,~] = sf_template.match(sf);
     % show matches.
     figure;
     idisp({I_template, I}, 'dark');
     m.subset(100).plot('w');
-    % TODO use RANSAC to compute homography between template and I.
-%     m.ransac(@fmatrix, 1e-4)
     %--------------------------------------------------------------
-    [transform, t1, t2, t3] = tf_ransac(m);
+    % use RANSAC to compute homography between template and I.
+    transform = tf_ransac(m);
     % show these transformed points on the plot for visual inspection.
     hold on
-    tf_pts = m.p1;
-    for tf = [t1, t2, t3]
-        tf_pts = transform_points(tf,tf_pts);
-        scatter(tf_pts(1,:)+t_w, tf_pts(2,:))
-    end
+    tf_pts =  transform_points(transform,m.p1);
+    scatter(tf_pts(1,:)+t_w, tf_pts(2,:))
     % show the transformed points on just the real image.
     figure; idisp(I); hold on
     scatter(tf_pts(1,:), tf_pts(2,:))
@@ -62,24 +48,28 @@ for n = 1:num_images
     p = 20; % padding from edges of template.
     corners = [p, p; p, t_h-p; t_w-p, t_h-p; t_w-p, p; p, p]';
     tf_corners = transform_points(transform, corners);
-%     for i = 1:4
-%         plot()
-%     end
     plot(tf_corners(1,:), tf_corners(2,:))
     %--------------------------------------------------------------
-    % TODO decompose homography into rotation and translation.
     if n > 1
         % use tf_prev and tf to compute I_prev -> I.
-        % TODO if tf in SE(3),
-    %     tf_images = inv(tf_prev) * tf;
-        % TODO to display matches, maybe use correspondences for each to match
-        % features between the images, using template as intermediary.
+        tf_images = SE2(transform.T * inv(tf_prev.T));
+        % TODO decompose homography into rotation and translation.
+        disp(strcat("Relation from image ",num2str(n-1)," to ",num2str(n),":"))
+        translation = tf_images.t
+%         R = tf_images.R; alpha = degrees(atan2(R(2,1), R(1,1)))
+        rotation_angle = tf_images.angle
+        % display correspondances.
+        I_pair = imfuse(I_prev, I, 'montage');
+        figure; idisp(I_pair); hold on
+        im1_pts = m_prev.p2;
+        im2_pts = transform_points(tf_images, im1_pts);
+        im1_w = size(I_prev, 2);
+        plot([im1_pts(1,:); im2_pts(1,:)+im1_w], [im1_pts(2,:); im2_pts(2,:)], 'y')
     end
     % save things for "previous image" on next iteration.
-%     tf_prev = tf;
-    correspondences_prev = correspondences;
+    tf_prev = transform;
+    m_prev = m;
     I_prev = I;
-    sf_prev = sf;
 end
 
 
@@ -87,7 +77,7 @@ end
 %%%%%%%%%%%%%%%%%%% FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%
 % Function to perform RANSAC to obtain a transform between pairs of images.
 % @param matches: FeatureMatch object from template to image.
-function [transform, t1, t2, t3] = tf_ransac(matches)
+function transform = tf_ransac(matches)
     % config parameters.
     GROUP_SIZE = 40;
     EPSILON = 40; % (in pixels) tolerance for a tf being ok for a pair.
