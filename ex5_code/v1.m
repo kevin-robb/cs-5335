@@ -103,27 +103,9 @@ function transform = tf_ransac(matches)
             set_1(:,i) = full_set_1(:,indexes(i,1));
             set_2(:,i) = full_set_2(:,indexes(i,1));
         end
-        % first, compute center of gravity for each set to get translation.
-        cg_1 = [sum(set_1(1,:)); sum(set_1(2,:))] / GROUP_SIZE;
-        cg_2 = [sum(set_2(1,:)); sum(set_2(2,:))] / GROUP_SIZE;
-        % next, center the sets of points at 0 so we can compute the rotation.
-        set_1 = set_1 - cg_1; set_2 = set_2 - cg_2;
-        % compute the matrix N.
-        N = zeros(2,2);
-        for i=1:GROUP_SIZE
-            N = N + set_1(:,i) * set_2(:,i)';
-        end
-        % find the singular value decomposition of N.
-        [U,S,V] = svd(N); % N=U*S*V'
-        % compute the rotation matrix.
-        R = V * U';
-        % extract the rotation angle.
-%         alpha = atan2(R(2,1), R(1,1));
-        % now we can build our SE3 transformation matrix.
-        t1 = SE2(-cg_1(1), -cg_1(2));
-        t2 = SE2(R);
-        t3 = SE2(cg_2(1), cg_2(2));
-        transform = t3 * t2 * t1;
+        
+        % use our helper function (defined below) to estimate tf.
+        transform = estimate_transform(set_1, set_2);
         
         % check how many points fit within a tolerance using this tf.
         num_in_tolerance = 0;
@@ -136,6 +118,46 @@ function transform = tf_ransac(matches)
         % compute ratio of inliers to total points.
         ratio_in_tolerance = num_in_tolerance / total_size;
     end
+    % recompute transform using all inliers from the acceptable tf.
+    inliers_1 = []; inliers_2 = [];
+    for i = 1:total_size
+        affine_tf_pt = transform.T * [full_set_1(:,i); 1];
+        if EPSILON > norm(affine_tf_pt(1:2) - full_set_2(:,i))
+            % the transform works for this pair of points.
+            inliers_1 = [inliers_1, full_set_1(:,i)];
+            inliers_2 = [inliers_2, full_set_2(:,i)];
+        end
+    end
+    transform = estimate_transform(inliers_1, inliers_2);
+end
+
+% Function to estimate the homography between two sets of points
+% with known data association.
+% @param set_1, set_2: two 2xN double arrays.
+% @return transform: SE2 homography.
+function transform = estimate_transform(set_1, set_2)
+    GROUP_SIZE = size(set_1, 2);
+    % first, compute center of gravity for each set to get translation.
+    cg_1 = [sum(set_1(1,:)); sum(set_1(2,:))] / GROUP_SIZE;
+    cg_2 = [sum(set_2(1,:)); sum(set_2(2,:))] / GROUP_SIZE;
+    % next, center the sets of points at 0 so we can compute the rotation.
+    set_1 = set_1 - cg_1; set_2 = set_2 - cg_2;
+    % compute the matrix N.
+    N = zeros(2,2);
+    for i=1:GROUP_SIZE
+        N = N + set_1(:,i) * set_2(:,i)';
+    end
+    % find the singular value decomposition of N.
+    [U,S,V] = svd(N); % N=U*S*V'
+    % compute the rotation matrix.
+    R = V * U';
+    % extract the rotation angle.
+%         alpha = atan2(R(2,1), R(1,1));
+    % now we can build our SE3 transformation matrix.
+    t1 = SE2(-cg_1(1), -cg_1(2));
+    t2 = SE2(R);
+    t3 = SE2(cg_2(1), cg_2(2));
+    transform = t3 * t2 * t1;
 end
 
 
