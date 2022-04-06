@@ -8,9 +8,10 @@ scene = imageDatastore(image_dir);
 % scene = imageDatastore(strcat('Coursework/cs5335/ex5_code/',image_dir));
 % montage(scene.Files); % display images in one figure.
 num_images = numel(scene.Files);
-% read in template of book cover.
+% read in template of book cover, and scale to about the height of images.
 I_template = iread('catch_22_template.jpg');
-I_template = scale_down_img(I_template, 3.7);
+scale_factor = size(I_template, 1) / size(readimage(scene,1), 1) * 1.1; %~3.7
+I_template = scale_down_img(I_template, scale_factor);
 t_h = size(I_template, 1); t_w = size(I_template, 2);
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % first get features from template.
@@ -48,7 +49,7 @@ for n = 1:num_images
     p = 20; % padding from edges of template.
     corners = [p, p; p, t_h-p; t_w-p, t_h-p; t_w-p, p; p, p]';
     tf_corners = transform_points(transform, corners);
-    plot(tf_corners(1,:), tf_corners(2,:))
+    plot(tf_corners(1,:), tf_corners(2,:), 'r')
     %--------------------------------------------------------------
     if n > 1
         % use tf_prev and tf to compute I_prev -> I.
@@ -65,11 +66,15 @@ for n = 1:num_images
         im2_pts = transform_points(tf_images, im1_pts);
         im1_w = size(I_prev, 2);
         plot([im1_pts(1,:); im2_pts(1,:)+im1_w], [im1_pts(2,:); im2_pts(2,:)], 'y')
+        % show bounding box for both images.
+        plot(tf_corners_prev(1,:), tf_corners_prev(2,:), 'r')
+        plot(tf_corners(1,:)+im1_w, tf_corners(2,:), 'r')
     end
     % save things for "previous image" on next iteration.
     tf_prev = transform;
     m_prev = m;
     I_prev = I;
+    tf_corners_prev = tf_corners;
 end
 
 
@@ -77,6 +82,7 @@ end
 %%%%%%%%%%%%%%%%%%% FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%
 % Function to perform RANSAC to obtain a transform between pairs of images.
 % @param matches: FeatureMatch object from template to image.
+% @return transform: SE2 homography from template to image.
 function transform = tf_ransac(matches)
     % config parameters.
     GROUP_SIZE = 40;
@@ -100,7 +106,6 @@ function transform = tf_ransac(matches)
         % first, compute center of gravity for each set to get translation.
         cg_1 = [sum(set_1(1,:)); sum(set_1(2,:))] / GROUP_SIZE;
         cg_2 = [sum(set_2(1,:)); sum(set_2(2,:))] / GROUP_SIZE;
-    %     translation = cg_2 - cg_1;
         % next, center the sets of points at 0 so we can compute the rotation.
         set_1 = set_1 - cg_1; set_2 = set_2 - cg_2;
         % compute the matrix N.
@@ -112,7 +117,7 @@ function transform = tf_ransac(matches)
         [U,S,V] = svd(N); % N=U*S*V'
         % compute the rotation matrix.
         R = V * U';
-    %     % extract the rotation angle.
+        % extract the rotation angle.
 %         alpha = atan2(R(2,1), R(1,1));
         % now we can build our SE3 transformation matrix.
         t1 = SE2(-cg_1(1), -cg_1(2));
@@ -122,10 +127,8 @@ function transform = tf_ransac(matches)
         
         % check how many points fit within a tolerance using this tf.
         num_in_tolerance = 0;
-%         transformed_set_1 = zeros(2,total_size);
         for i = 1:total_size
             affine_tf_pt = transform.T * [full_set_1(:,i); 1];
-%             transformed_set_1(:,i) = affine_tf_pt(1:2);
             if EPSILON > norm(affine_tf_pt(1:2) - full_set_2(:,i))
                 num_in_tolerance = num_in_tolerance + 1;
             end
@@ -133,17 +136,13 @@ function transform = tf_ransac(matches)
         % compute ratio of inliers to total points.
         ratio_in_tolerance = num_in_tolerance / total_size;
     end
-%     % show matches from transform.
-%     tf_matches = FeatureMatch(matches.p1, transformed_set_1);
-% %     matches.p2 = transformed_set_1;
-%     figure;
-%     idisp({I_template, I}, 'dark');
-%     tf_matches.subset(100).plot('w');
 end
 
 
 % Function to apply a transform to a set of points.
 % @param tf: SE2 transform.
+% @param pts: 2xN array of points to transform.
+% @return tf_pts: 2xN array of transformed pts.
 function tf_pts = transform_points(tf, pts)
     tf_pts = zeros(2,size(pts,2));
     for i=1:size(pts,2)
