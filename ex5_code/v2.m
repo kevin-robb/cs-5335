@@ -7,10 +7,14 @@ N = size(bunny, 2);
 % create new pointcloud by transforming this one.
 tf_true = SE3.rand().T;
 bunny2 = transform_points(tf_true,bunny);
+% add perturbations to the individual points.
+bunny2 = bunny2 + 0.01 * randn(3, N);
+% TODO add spurious points and remove some existing points.
+
 
 % make initial guess for transform. if rotation is too different,
 % there is no hope of ICP working.
-tf_guess = tf_true + 0.1 * SE3.rand().T;
+tf_guess = tf_true + 0.3 * SE3.rand().T;
 % use ICP to estimate the transform.
 tf_est = icp(bunny, bunny2, tf_guess);
 
