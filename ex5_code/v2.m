@@ -6,23 +6,27 @@ load('bunny.mat'); % 3xN data called "bunny".
 N = size(bunny, 2);
 % create new pointcloud by transforming this one.
 tf_true = SE3.rand().T;
-bunny_2 = transform_points(tf_true,bunny);
-% bunny_2 = zeros(4,N);
-% for i = 1:N
-%     bunny_2(:,i) = true_tf.T * [bunny(:,i); 1];
-% end
-% bunny_2 = bunny_2(1:3,:); % remove row of 1s.
-% use ICP to estimate the transform between them.
-tf_est = icp(bunny, bunny_2);
+bunny2 = transform_points(tf_true,bunny);
+
+% make initial guess for transform. if rotation is too different,
+% there is no hope of ICP working.
+tf_guess = tf_true + 0.1 * SE3.rand().T;
+% use ICP to estimate the transform.
+tf_est = icp(bunny, bunny2, tf_guess);
 
 %%%%%%%%%%%%%%%%%%%%%%% SHOW RESULTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 figure;
-pcshow(bunny','r'); hold on
+pcshow(bunny','r','MarkerSize',12); hold on
 % compute transformed bunny with our tf estimate.
-bunny_est = transform_points(tf_est, bunny);
-pcshow(bunny_est','g')
+bunny2_est = transform_points(tf_est, bunny);
+pcshow(bunny2_est','g','MarkerSize',12)
 % show true transformed bunny.
-pcshow(bunny_2','b')
+pcshow(bunny2','b','MarkerSize',12)
+
+% make the figure white.
+set(gcf,'color','w'); set(gca,'color','w');
+set(gca, 'XColor', [0.15 0.15 0.15], 'YColor', [0.15 0.15 0.15], 'ZColor', [0.15 0.15 0.15])
+
 
 % print transforms to console.
 tf_true
@@ -47,14 +51,18 @@ end
 % Function to estimate the transform between two pointclouds
 % using the iterative closest point (ICP) algorithm.
 % @param set_1, set_2: two 3xN arrays for the two pointclouds.
+% @param tf_init: initial guess for 4x4 transformation matrix.
+%  - default = eye(4)
 % @return transform: 4x4 homogenous transformation matrix.
-function transform = icp(set_1, set_2)
+function transform = icp(set_1, set_2, transform)
     % keep track of point sets as affine representation to allow tf mult.
     N = size(set_1, 2);
     prev_set = [set_1; ones(1, N)];
     set_2 = [set_2; ones(1, size(set_2, 2))];
-    % TODO need initial estimate for transform.
-    transform = eye(4); %SE3();
+    % need initial estimate for transform.
+    if ~exist('transform', 'var')
+        transform = eye(4); % identity in SE(3).
+    end
     % parameters
     diff = 100; TOLERANCE = 0.00001;
     iter_count = 1; MAX_ITERATIONS = 100;
