@@ -5,24 +5,28 @@ close all; clear all;
 load('bunny.mat'); % 3xN data called "bunny".
 N = size(bunny, 2);
 % create new pointcloud by transforming this one.
-true_tf = SE3.rand().T;
-bunny_2 = transform_points(true_tf,bunny);
+tf_true = SE3.rand().T;
+bunny_2 = transform_points(tf_true,bunny);
 % bunny_2 = zeros(4,N);
 % for i = 1:N
 %     bunny_2(:,i) = true_tf.T * [bunny(:,i); 1];
 % end
 % bunny_2 = bunny_2(1:3,:); % remove row of 1s.
 % use ICP to estimate the transform between them.
-transform = icp(bunny, bunny_2);
+tf_est = icp(bunny, bunny_2);
 
 %%%%%%%%%%%%%%%%%%%%%%% SHOW RESULTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 figure;
 pcshow(bunny','r'); hold on
 % compute transformed bunny with our tf estimate.
-bunny_est = transform_points(transform,bunny);
+bunny_est = transform_points(tf_est, bunny);
 pcshow(bunny_est','g')
 % show true transformed bunny.
 pcshow(bunny_2','b')
+
+% print transforms to console.
+tf_true
+tf_est
 
 
 %%%%%%%%%%%%%%%%%%%%%%%% FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -53,7 +57,7 @@ function transform = icp(set_1, set_2)
     transform = eye(4); %SE3();
     % parameters
     diff = 100; TOLERANCE = 0.00001;
-    iter_count = 1; MAX_ITERATIONS = 30;
+    iter_count = 1; MAX_ITERATIONS = 100;
     % iteratively correlate points in set_1 with nearest neighbor in set_2,
     % estimate a transformation, and compute the error.
     while diff > TOLERANCE && iter_count < MAX_ITERATIONS
@@ -67,10 +71,10 @@ function transform = icp(set_1, set_2)
             neighbors(:,i) = nearest_pt(tf_set_1(:,i), set_2);
         end
         % DEBUG show the pointclouds.
-        figure; pcshow(tf_set_1(1:3,:)','r'); hold on
-        pcshow(neighbors(1:3,:)','g')
+%         figure; pcshow(tf_set_1(1:3,:)','g'); hold on
+%         pcshow(neighbors(1:3,:)','b')
         % using these data associations, estimate a transform between them.
-        tf = estimate_transform(tf_set_1(1:3,:), neighbors(1:3,:))
+        tf = estimate_transform(tf_set_1(1:3,:), neighbors(1:3,:));
         % apply this to our cumulative transform.
         transform = tf * transform;
         if iter_count > 1
@@ -104,7 +108,7 @@ function transform = estimate_transform(set_1, set_2)
     GROUP_SIZE = size(set_1, 2);
     % first, compute center of gravity for each set to get translation.
     cg_1 = [sum(set_1(1,:)); sum(set_1(2,:)); sum(set_1(3,:))] / GROUP_SIZE;
-    cg_2 = [sum(set_2(1,:)); sum(set_2(2,:)); sum(set_1(3,:))] / GROUP_SIZE;
+    cg_2 = [sum(set_2(1,:)); sum(set_2(2,:)); sum(set_2(3,:))] / GROUP_SIZE;
     % next, center the sets of points at 0 so we can compute the rotation.
     set_1 = set_1 - cg_1; set_2 = set_2 - cg_2;
     % compute the matrix N.
