@@ -1,19 +1,35 @@
-
-load('bunny.mat'); % 3xN data called "bunny".
-pt = bunny(:,50);
-normal = surface_norm(pt, bunny);
+% Code for V3, RANSAC implementation for detecting geometries in scene.
+close all; clear all;
+%%%%%%%%%%%%%%%%%%%%%%%%% SETUP %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+load('ptcloud.mat'); % two 3xN datas called "ptcloud_rgb" and "ptcloud_xyz".
+% just get the set of points.
+M = size(ptcloud_xyz, 1); N = size(ptcloud_xyz, 2);
+points = zeros(3, M*N);
+for i = 1:M
+    for j = 1:N
+        points(:,i*M+N) = ptcloud_xyz(i,j,:);
+    end
+end
+% compute planes.
+planes = ransac_planes(points);
 
 
 %%%%%%%%%%%%%%%%%%%%%%% SHOW RESULTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% display whole cloud, then each plane in diff color.
 figure;
-pcshow(bunny','r','MarkerSize',12); hold on
-% show normal vectors for all points.
-normals = zeros(3, size(bunny, 2));
-for i = 1:size(bunny, 2)
-    normals(:, i) = surface_norm(bunny(:, i), bunny);
-end
-normals = 0.1 * normals + bunny;
-pcshow(normals','g','MarkerSize',12)
+pcshow(ptcloud_xyz','black','MarkerSize',12); hold on
+% % show normal vectors for all points.
+% normals = zeros(3, size(ptcloud_xyz, 2));
+% for i = 1:size(ptcloud_xyz, 2)
+%     normals(:, i) = surface_norm(ptcloud_xyz(:, i), ptcloud_xyz);
+% end
+% normals = 0.1 * normals + ptcloud_xyz;
+% pcshow(normals','g','MarkerSize',12)
+
+% show each plane in diff color.
+pcshow(planes(1)','blue','MarkerSize',12);
+pcshow(planes(2)','red','MarkerSize',12);
+pcshow(planes(3)','yellow','MarkerSize',12);
 
 % make the figure white.
 set(gcf,'color','w'); set(gca,'color','w');
@@ -23,6 +39,58 @@ set(gca, 'XColor', [0.15 0.15 0.15], 'YColor', [0.15 0.15 0.15], 'ZColor', [0.15
 
 
 %%%%%%%%%%%%%%%%%%%%%%%% FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Function to perform RANSAC to find all planes in a scene.
+function planes = ransac_planes(cloud)
+    N = size(cloud, 2);
+    num_planes = 0;
+    % compute normal vectors for all points.
+    normals = zeros(3, size(cloud, 2));
+%     for i = 1:N
+%         normals(:, i) = surface_norm(cloud(:, i), cloud);
+%     end
+    NUM_RANSAC_TRIALS = 1000; trial_num = 1;
+    MIN_PTS_IN_PLANE = 300;
+    while trial_num < NUM_RANSAC_TRIALS
+        % choose 3 points at random, assume they form a plane, and find all
+        % points that could lie on that plane. 
+        indexes = randi([1,N],3,1);
+        pts = cloud(:,indexes')
+        % find normal vector for plane.
+        v1 = pts(:,2) - pts(:,1);
+        v2 = pts(:,3) - pts(:,1);
+        n = cross(v1, v2); % using 1st vector as point.
+        % equation of plane is then: (=0 for points on plane)
+        plane_eq = @(x) n(1)*x(1) + n(2)*x(2) + n(3)*x(3) - n(1)*pts(1,1) - n(2)*pts(2,1) - n(3)*pts(3,1);
+        % for every point, if its unit vector is appx perpendicular to this
+        % plane, and its position is close, we say it is included.
+        ind_in_plane = []; pts_in_plane = [];
+        for i = 1:N
+            if plane_eq(cloud(:,i)) < 0.05
+                % point is close to being on plane.
+%                 if norm(cross(n, normals(:,i))) > 0.1
+%                     % point's surface normal is close to perpendicular to plane.
+                ind_in_plane = [ind_in_plane, i];
+                pts_in_plane = [pts_in_plane, cloud(:,i)];
+%                 end
+            end
+        end
+        % see if we're satisfied with the number of points in this plane.
+        if size(pts_in_plane, 2) > MIN_PTS_IN_PLANE
+            num_planes = num_planes + 1;
+            % TODO save the plane defn, not just the set of pts.
+            plane{num_planes} = pts_in_plane;
+            % ensure these points won't be considered for future planes.
+            for i = flip(ind_in_plane, 2)
+                cloud(:,i) = [];
+            end
+        end
+        trial_num = trial_num + 1;
+    end
+end
+
+
+
+
 
 % Function to compute surface normal at a given point in a pointcloud.
 % @param pt: 3x1 point.
