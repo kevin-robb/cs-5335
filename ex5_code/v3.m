@@ -1,15 +1,25 @@
 % Code for V3, RANSAC implementation for detecting geometries in scene.
 close all; clear all;
 %%%%%%%%%%%%%%%%%%%%%%%%% SETUP %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-load('ptcloud.mat'); % two 3xN datas called "ptcloud_rgb" and "ptcloud_xyz".
-% just get the set of points.
-M = size(ptcloud_xyz, 1); N = size(ptcloud_xyz, 2);
-points = zeros(3, M*N);
-for i = 1:M
-    for j = 1:N
-        points(:,i*M+N) = ptcloud_xyz(i,j,:);
+load('ptcloud.mat'); % two MxNx3 pcs called "ptcloud_rgb" and "ptcloud_xyz".
+try
+    load('points.mat'); % 3xN pointcloud
+catch
+    % just get the set of points.
+    M = size(ptcloud_xyz, 1); N = size(ptcloud_xyz, 2);
+    points = [];
+    for i = 1:M
+        for j = 1:N
+            if ~any(isnan(ptcloud_xyz(i,j,:)))
+                pt = [ptcloud_xyz(i,j,1); ptcloud_xyz(i,j,2); ptcloud_xyz(i,j,3)];
+                points = [points, pt];
+            end
+        end
     end
+    % save points to .mat to not have to do this every time.
+    save('points.mat', 'points')
 end
+
 % compute planes.
 planes = ransac_planes(points);
 
@@ -17,7 +27,7 @@ planes = ransac_planes(points);
 %%%%%%%%%%%%%%%%%%%%%%% SHOW RESULTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % display whole cloud, then each plane in diff color.
 figure;
-pcshow(ptcloud_xyz','black','MarkerSize',12); hold on
+pcshow(points','black','MarkerSize',12); hold on
 % % show normal vectors for all points.
 % normals = zeros(3, size(ptcloud_xyz, 2));
 % for i = 1:size(ptcloud_xyz, 2)
@@ -26,10 +36,16 @@ pcshow(ptcloud_xyz','black','MarkerSize',12); hold on
 % normals = 0.1 * normals + ptcloud_xyz;
 % pcshow(normals','g','MarkerSize',12)
 
+P = size(planes, 2);
+
 % show each plane in diff color.
-pcshow(planes(1)','blue','MarkerSize',12);
-pcshow(planes(2)','red','MarkerSize',12);
-pcshow(planes(3)','yellow','MarkerSize',12);
+pcshow(planes{1}','blue','MarkerSize',12);
+if P > 1
+    pcshow(planes{2}','red','MarkerSize',12);
+end
+if P > 2
+    pcshow(planes{3}','yellow','MarkerSize',12);
+end
 
 % make the figure white.
 set(gcf,'color','w'); set(gca,'color','w');
@@ -42,7 +58,7 @@ set(gca, 'XColor', [0.15 0.15 0.15], 'YColor', [0.15 0.15 0.15], 'ZColor', [0.15
 % Function to perform RANSAC to find all planes in a scene.
 function planes = ransac_planes(cloud)
     N = size(cloud, 2);
-    num_planes = 0;
+    num_planes = 0; planes = {};
     % compute normal vectors for all points.
     normals = zeros(3, size(cloud, 2));
 %     for i = 1:N
@@ -50,11 +66,11 @@ function planes = ransac_planes(cloud)
 %     end
     NUM_RANSAC_TRIALS = 1000; trial_num = 1;
     MIN_PTS_IN_PLANE = 300;
-    while trial_num < NUM_RANSAC_TRIALS
+    while trial_num < NUM_RANSAC_TRIALS && N > MIN_PTS_IN_PLANE
         % choose 3 points at random, assume they form a plane, and find all
         % points that could lie on that plane. 
         indexes = randi([1,N],3,1);
-        pts = cloud(:,indexes')
+        pts = cloud(:,indexes);
         % find normal vector for plane.
         v1 = pts(:,2) - pts(:,1);
         v2 = pts(:,3) - pts(:,1);
@@ -65,7 +81,7 @@ function planes = ransac_planes(cloud)
         % plane, and its position is close, we say it is included.
         ind_in_plane = []; pts_in_plane = [];
         for i = 1:N
-            if plane_eq(cloud(:,i)) < 0.05
+            if abs(plane_eq(cloud(:,i))) < 0.05
                 % point is close to being on plane.
 %                 if norm(cross(n, normals(:,i))) > 0.1
 %                     % point's surface normal is close to perpendicular to plane.
@@ -78,11 +94,13 @@ function planes = ransac_planes(cloud)
         if size(pts_in_plane, 2) > MIN_PTS_IN_PLANE
             num_planes = num_planes + 1;
             % TODO save the plane defn, not just the set of pts.
-            plane{num_planes} = pts_in_plane;
+            planes{num_planes} = pts_in_plane;
             % ensure these points won't be considered for future planes.
             for i = flip(ind_in_plane, 2)
                 cloud(:,i) = [];
             end
+            % update the size, since it's used as index upper bound.
+            N = size(cloud, 2);
         end
         trial_num = trial_num + 1;
     end
