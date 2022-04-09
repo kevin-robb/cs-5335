@@ -25,9 +25,9 @@ planes = ransac_planes(points);
 
 
 %%%%%%%%%%%%%%%%%%%%%%% SHOW RESULTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% display whole cloud, then each plane in diff color.
-figure;
-pcshow(points','black','MarkerSize',12); hold on
+% display whole cloud.
+show_pointcloud(points)
+
 % % show normal vectors for all points.
 % normals = zeros(3, size(ptcloud_xyz, 2));
 % for i = 1:size(ptcloud_xyz, 2)
@@ -37,15 +37,19 @@ pcshow(points','black','MarkerSize',12); hold on
 % pcshow(normals','g','MarkerSize',12)
 
 P = size(planes, 2);
-
+colors = ['r','g','b','c','m','y','k'];
 % show each plane in diff color.
-pcshow(planes{1}','blue','MarkerSize',12);
-if P > 1
-    pcshow(planes{2}','red','MarkerSize',12);
+figure; hold on
+for i = 1:P
+    pcshow(planes{i}',colors(i),'MarkerSize',12);
 end
-if P > 2
-    pcshow(planes{3}','yellow','MarkerSize',12);
-end
+% pcshow(planes{1}','blue','MarkerSize',12); hold on
+% if P > 1
+%     pcshow(planes{2}','red','MarkerSize',12);
+% end
+% if P > 2
+%     pcshow(planes{3}','yellow','MarkerSize',12);
+% end
 
 % make the figure white.
 set(gcf,'color','w'); set(gca,'color','w');
@@ -55,17 +59,36 @@ set(gca, 'XColor', [0.15 0.15 0.15], 'YColor', [0.15 0.15 0.15], 'ZColor', [0.15
 
 
 %%%%%%%%%%%%%%%%%%%%%%%% FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Function to display a pointcloud in a specified color.
+% @param cloud: 3xN points to display.
+% @param color: string, e.g. 'b','r','g','k','y'.
+function show_pointcloud(cloud, color)
+    if ~exist('color', 'var')
+        color = 'black';
+    end
+    % display whole cloud in its own figure.
+    figure;
+    pcshow(cloud',color,'MarkerSize',12); 
+    
+    % make the figure look better visually.
+    set(gcf,'color','w'); set(gca,'color','w');
+    set(gca, 'XColor', [0.15 0.15 0.15], 'YColor', [0.15 0.15 0.15], 'ZColor', [0.15 0.15 0.15])
+end
+
+
+
 % Function to perform RANSAC to find all planes in a scene.
+% @param cloud: 3xN array of points.
 function planes = ransac_planes(cloud)
     N = size(cloud, 2);
     num_planes = 0; planes = {};
     % compute normal vectors for all points.
-    normals = zeros(3, size(cloud, 2));
-%     for i = 1:N
-%         normals(:, i) = surface_norm(cloud(:, i), cloud);
-%     end
+    normals = {}; %zeros(3, size(cloud, 2));
+    for i = 1:N
+        normals{i} = surface_norm(cloud(:, i), cloud);
+    end
     NUM_RANSAC_TRIALS = 1000; trial_num = 1;
-    MIN_PTS_IN_PLANE = 300;
+    MIN_PTS_IN_PLANE = 10000; EPSILON = 0.05;
     while trial_num < NUM_RANSAC_TRIALS && N > MIN_PTS_IN_PLANE
         % choose 3 points at random, assume they form a plane, and find all
         % points that could lie on that plane. 
@@ -77,17 +100,25 @@ function planes = ransac_planes(cloud)
         n = cross(v1, v2); % using 1st vector as point.
         % equation of plane is then: (=0 for points on plane)
         plane_eq = @(x) n(1)*x(1) + n(2)*x(2) + n(3)*x(3) - n(1)*pts(1,1) - n(2)*pts(2,1) - n(3)*pts(3,1);
+        % DEBUG show the plane. put breakpoint after this bit.
+        show_pointcloud(cloud); hold on
+        fill3(pts(1,:),pts(2,:),pts(3,:),rand(1,3))
+
         % for every point, if its unit vector is appx perpendicular to this
         % plane, and its position is close, we say it is included.
         ind_in_plane = []; pts_in_plane = [];
         for i = 1:N
-            if abs(plane_eq(cloud(:,i))) < 0.05
-                % point is close to being on plane.
-%                 if norm(cross(n, normals(:,i))) > 0.1
-%                     % point's surface normal is close to perpendicular to plane.
-                ind_in_plane = [ind_in_plane, i];
-                pts_in_plane = [pts_in_plane, cloud(:,i)];
-%                 end
+            % check if pt is close to being on plane.
+            if abs(plane_eq(cloud(:,i))) < 0.001
+                % check if pt's surface norm is appx parallel to plane's.
+                if isempty(normals{i})
+                    % pt is not part of a surface.
+                    continue
+                elseif abs(dot(n, normals{i})) > 1 - EPSILON
+                    % point's surface normal vector is good.
+                    ind_in_plane = [ind_in_plane, i];
+                    pts_in_plane = [pts_in_plane, cloud(:,i)];
+                end
             end
         end
         % see if we're satisfied with the number of points in this plane.
@@ -105,10 +136,6 @@ function planes = ransac_planes(cloud)
         trial_num = trial_num + 1;
     end
 end
-
-
-
-
 
 % Function to compute surface normal at a given point in a pointcloud.
 % @param pt: 3x1 point.
