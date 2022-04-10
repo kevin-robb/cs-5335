@@ -3,19 +3,21 @@ close all; clear all;
 %%%%%%%%%%%%%%%%%%%%%%%%% SETUP %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 load('ptcloud.mat'); % two MxNx3 pcs called "ptcloud_rgb" and "ptcloud_xyz".
 % display whole pointcloud.
-% show_pointcloud(ptcloud_xyz)
+% show_pointcloud(ptcloud_xyz, ptcloud_rgb)
 
 % compute surface norms.
 normals = compute_all_normals(ptcloud_xyz);
 
 %%%%%%%%%%%%%%%%%%%%%%%%% PLANES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% compute planes.
+% find all planes with RANSAC.
 % planes = ransac_planes(ptcloud_xyz, normals);
 % show_planes(planes);
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%% SPHERE %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%5
 % find the sphere's center and radius with RANSAC.
 [center, radius] = ransac_sphere(ptcloud_xyz, normals);
+show_sphere(ptcloud_xyz, radius, center);
+
 
 
 
@@ -78,22 +80,28 @@ function [center, radius] = ransac_sphere(cloud, normals)
         % check if enough points fit the sphere.
         if size(pts_on_sphere, 2) > MIN_PTS_ON_SPHERE
             disp(strcat("Found satisfactory sphere on trial ", num2str(trial_num),"."))
-            % DEBUG show the sphere and iteration count.
+            % DEBUG show the sphere.
 %             show_sphere(cloud, rad, ctr)
 
             % recompute sphere params with only the inliers.
-            [radius, center] = snap_sphere(cloud, normals, ind_on_sphere, RADIUS_RANGE);
+            [center, radius] = snap_sphere(cloud, normals, ind_on_sphere, RADIUS_RANGE);
             % DEBUG show the sphere.
-            show_sphere(cloud, radius, center)
+%             show_sphere(cloud, radius, center)
 
             % save results and exit RANSAC loop.
             return
         end
     end
+    disp(strcat("Failed to find sphere in scene after ",num2str(NUM_RANSAC_TRIALS)," RANSAC iterations."))
 end
 
 % Function to refine sphere estimate using set of inliers.
-function [radius, center] = snap_sphere(cloud, normals, inlier_inds, RADIUS_RANGE)
+% @param cloud: MxNx3 array of points.
+% @param normals: MxNx3 set of surface normal vectors for pts in cloud.
+% @param inlier_inds: 2xI set of indices [i;j] of inlier points.
+% @param RADIUS_RANGE: 1x2 set of [min,max] allowable radius.
+% @return center, radius of sphere.
+function [center, radius] = snap_sphere(cloud, normals, inlier_inds, RADIUS_RANGE)
     M = size(inlier_inds, 2);
     disp(strcat("Number of inliers = ", num2str(M),"."))
     ITERATIONS = 30; iter_num = 0;
@@ -133,7 +141,6 @@ function [radius, center] = snap_sphere(cloud, normals, inlier_inds, RADIUS_RANG
     % return the best sphere params found.
     radius = best_rad; center = best_ctr;
 end
-
 
 % Function to perform RANSAC to find all planes in a scene.
 % @param cloud: MxNx3 array of points.
