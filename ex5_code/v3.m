@@ -2,94 +2,160 @@
 close all; clear all;
 %%%%%%%%%%%%%%%%%%%%%%%%% SETUP %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 load('ptcloud.mat'); % two MxNx3 pcs called "ptcloud_rgb" and "ptcloud_xyz".
-% try
-%     load('points.mat'); % 3xN pointcloud
-% catch
-%     % just get the set of points.
-%     M = size(ptcloud_xyz, 1); N = size(ptcloud_xyz, 2);
-%     points = [];
-%     for i = 1:M
-%         for j = 1:N
-%             if ~any(isnan(ptcloud_xyz(i,j,:)))
-%                 pt = [ptcloud_xyz(i,j,1); ptcloud_xyz(i,j,2); ptcloud_xyz(i,j,3)];
-%                 points = [points, pt];
+% display whole pointcloud.
+% show_pointcloud(ptcloud_xyz)
+
+% compute surface norms.
+normals = compute_all_normals(ptcloud_xyz);
+
+%%%%%%%%%%%%%%%%%%%%%%%%% PLANES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% compute planes.
+% planes = ransac_planes(ptcloud_xyz, normals);
+% show_planes(planes);
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%% SPHERE %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%5
+% find the sphere's center and radius with RANSAC.
+[center, radius] = ransac_sphere(ptcloud_xyz, normals);
+
+
+
+%%%%%%%%%%%%%%%%%% COMPUTATIONAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% Function to perform RANSAC to find the sphere in a scene.
+% @param cloud: MxNx3 array of points.
+% @param normals: MxNx3 set of surface normal vectors for pts in cloud.
+% @return TODO
+function [center, radius] = ransac_sphere(cloud, normals)
+    M = size(cloud, 1); N = size(cloud, 2);
+    RADIUS_RANGE = [0.05, 0.10]; % meters.
+    NUM_RANSAC_TRIALS = 500; trial_num = 0;
+    MIN_PTS_ON_SPHERE = 6000; 
+    EPSILON_RAD = 0.02; EPSILON_ANG = 0.2;
+    REGION_SIZE = 50; % radius of area in pixels to search around candidate pt.
+    while trial_num < NUM_RANSAC_TRIALS
+        trial_num = trial_num + 1;
+        % choose a point at random, and assume it lies on the sphere.
+        while 1
+            % choose random indexes. ensure it has a normal vector.
+            % (pts with any NaN have already been given 0 for norm vec.)
+            r = randi([1,M],1); c = randi([1,N],1);
+            if ~all(normals(r,c,:) == 0)
+                pt = [cloud(r,c,1); cloud(r,c,2); cloud(r,c,3)];
+                n_pt = [normals(r,c,1); normals(r,c,2); normals(r,c,3)];
+                break
+            end
+        end
+%         disp("Chose random point")
+%         pt
+        % sample a radius at random in the range.
+        rad = (RADIUS_RANGE(2)-RADIUS_RANGE(1)) * rand() + RADIUS_RANGE(1);
+        % use pt's normal vector and radius to find center.
+        ctr = pt - n_pt * rad;
+        % DEBUG show the sphere
+%         show_sphere(cloud, rad, ctr)
+
+        % find all other pts on sphere. only check nearby pixels.
+        r_min = max(1, r - REGION_SIZE); r_max = min(M, r + REGION_SIZE);
+        c_min = max(1, c - REGION_SIZE); c_max = min(N, c + REGION_SIZE);
+        pts_on_sphere = []; ind_on_sphere = [];
+        for i = r_min:r_max
+        for j = c_min:c_max
+            p_c = [cloud(i,j,1); cloud(i,j,2); cloud(i,j,3)];
+            if all(normals(i,j,:) == 0)
+                % pt either has NaNs or isn't part of a surface. skip it.
+                continue
+            % candidate pt's dist from ctr must be appx 'rad'.
+            elseif abs(norm(p_c - ctr) - rad) < EPSILON_RAD
+%                 disp("Distance is good.")
+                % normal vector must be appx parallel to vec from ctr.
+                n_c = [normals(i,j,1); normals(i,j,2); normals(i,j,3)];
+                if abs(dot((p_c-ctr)/norm(p_c-ctr), n_c)) > 1 - EPSILON_ANG
+%                     disp("Angle is good.")
+                    % candidate could actually be on the sphere.
+                    ind_on_sphere = [ind_on_sphere, [i;j]];
+                    pts_on_sphere = [pts_on_sphere, p_c];
+                end
+            end
+        end
+        end
+%         disp("Found all pts on sphere")
+%         pts_on_sphere
+
+        % check if enough points fit the sphere.
+        if size(pts_on_sphere, 2) > MIN_PTS_ON_SPHERE
+            disp("Found satisfactory sphere.")
+            % DEBUG show the sphere and iteration count.
+            show_sphere(cloud, rad, ctr)
+            trial_num
+
+            % recompute sphere params with only the inliers.
+%             [rad, ctr] = ransac_sphere(pts_on_sphere, normals);
+
+            % save results and exit RANSAC loop.
+            radius = rad; center = ctr;
+            return
+        end
+    end
+end
+
+% Function to estimate sphere and find inliers.
+% function [radius, center] = estimate_sphere(cloud, normals, inlier_inds)
+%     % choose a point at random, and assume it lies on the sphere.
+%     while 1
+%         % choose random indexes. ensure it has a normal vector.
+%         % (pts with any NaN have already been given 0 for norm vec.)
+%         r = randi([1,M],1); c = randi([1,N],1);
+%         if ~all(normals(r,c,:) == 0)
+%             pt = [cloud(r,c,1); cloud(r,c,2); cloud(r,c,3)];
+%             n_pt = [normals(r,c,1); normals(r,c,2); normals(r,c,3)];
+%             break
+%         end
+%     end
+% %         disp("Chose random point")
+% %         pt
+%     % sample a radius at random in the range.
+%     rad = (RADIUS_RANGE(2)-RADIUS_RANGE(1)) * rand() + RADIUS_RANGE(1);
+%     % use pt's normal vector and radius to find center.
+%     ctr = pt - n_pt * rad;
+%     % DEBUG show the sphere
+% %         show_sphere(cloud, rad, ctr)
+% 
+%     % find all other pts on sphere. only check nearby pixels.
+%     r_min = max(1, r - REGION_SIZE); r_max = min(M, r + REGION_SIZE);
+%     c_min = max(1, c - REGION_SIZE); c_max = min(N, c + REGION_SIZE);
+%     pts_on_sphere = []; ind_on_sphere = [];
+%     for i = intersect(r_min:r_max, inlier_inds(1,:))
+%     for j = intersect(c_min:c_max, inlier_inds(2,:))
+%         p_c = [cloud(i,j,1); cloud(i,j,2); cloud(i,j,3)];
+%         if all(normals(i,j,:) == 0)
+%             % pt either has NaNs or isn't part of a surface. skip it.
+%             continue
+%         % candidate pt's dist from ctr must be appx 'rad'.
+%         elseif abs(norm(p_c - ctr) - rad) < EPSILON_RAD
+% %                 disp("Distance is good.")
+%             % normal vector must be appx parallel to vec from ctr.
+%             n_c = [normals(i,j,1); normals(i,j,2); normals(i,j,3)];
+%             if abs(dot((p_c-ctr)/norm(p_c-ctr), n_c)) > 1 - EPSILON_ANG
+% %                     disp("Angle is good.")
+%                 % candidate could actually be on the sphere.
+%                 ind_on_sphere = [ind_on_sphere, [i;j]];
+%                 pts_on_sphere = [pts_on_sphere, p_c];
 %             end
 %         end
 %     end
-%     % save points to .mat to not have to do this every time.
-%     save('points.mat', 'points')
+%     end
+% %         disp("Found all pts on sphere")
+% %         pts_on_sphere
 % end
-
-% compute planes.
-planes = ransac_planes(ptcloud_xyz);
-
-
-%%%%%%%%%%%%%%%%%%%%%%% SHOW RESULTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% display whole cloud.
-show_pointcloud(ptcloud_xyz)
-
-% % show normal vectors for all points.
-% normals = zeros(3, size(ptcloud_xyz, 2));
-% for i = 1:size(ptcloud_xyz, 2)
-%     normals(:, i) = surface_norm(ptcloud_xyz(:, i), ptcloud_xyz);
-% end
-% normals = 0.1 * normals + ptcloud_xyz;
-% pcshow(normals','g','MarkerSize',12)
-
-P = size(planes, 2);
-colors = ['r','g','b','c','m','y','k'];
-% show each plane in diff color.
-figure; hold on
-for i = 1:P
-    pcshow(planes{i}',colors(i),'MarkerSize',12);
-end
-% pcshow(planes{1}','blue','MarkerSize',12); hold on
-% if P > 1
-%     pcshow(planes{2}','red','MarkerSize',12);
-% end
-% if P > 2
-%     pcshow(planes{3}','yellow','MarkerSize',12);
-% end
-
-% make the figure white.
-set(gcf,'color','w'); set(gca,'color','w');
-set(gca, 'XColor', [0.15 0.15 0.15], 'YColor', [0.15 0.15 0.15], 'ZColor', [0.15 0.15 0.15])
-
-
-
-
-%%%%%%%%%%%%%%%%%%%%%%%% FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Function to display a pointcloud in a specified color.
-% @param cloud: MxNx3 organized pointcloud to display.
-% @param color: string, e.g. 'b','r','g','k','y'.
-function show_pointcloud(cloud, color)
-    if ~exist('color', 'var')
-        color = 'black';
-    end
-    % display whole cloud in its own figure.
-    figure;
-    pcshow(cloud,color,'MarkerSize',12); 
-    
-    % make the figure look better visually.
-    set(gcf,'color','w'); set(gca,'color','w');
-    set(gca, 'XColor', [0.15 0.15 0.15], 'YColor', [0.15 0.15 0.15], 'ZColor', [0.15 0.15 0.15])
-end
-
 
 
 % Function to perform RANSAC to find all planes in a scene.
 % @param cloud: MxNx3 array of points.
-function planes = ransac_planes(cloud)
+% @param normals: MxNx3 set of surface normal vectors for pts in cloud.
+% @return planes: 1xP cell array of planes. Each cell is 3xN set of pts.
+function planes = ransac_planes(cloud, normals)
     M = size(cloud, 1); N = size(cloud, 2);
     num_planes = 0; planes = {};
-    % compute normal vectors for all points.
-    normals = zeros(M,N,3);
-    for i = 1:M
-        for j = 1:N
-            normals(i,j,:) = surface_norm(i, j, cloud);
-        end
-    end
-    disp("Finished computing surface norms.")
     NUM_RANSAC_TRIALS = 300; trial_num = 1;
     MIN_PTS_IN_PLANE = 20000; 
     EPSILON_POS = 0.01; EPSILON_ANG = 0.1;
@@ -116,9 +182,8 @@ function planes = ransac_planes(cloud)
         % dist of a point x to the plane is then:
         plane_eq = @(x) (A*x(1) + B*x(2) + C*x(3) +D);
         
-        % DEBUG show the plane. put breakpoint after this bit.
-%         show_pointcloud(cloud); hold on
-%         fill3(pts(1,:),pts(2,:),pts(3,:),rand(1,3))
+        % DEBUG show the plane.
+%         show_triangle(cloud,pts)
 
         % for every point, if its unit vector is appx perpendicular to this
         % plane, and its position is close, we say it is included.
@@ -148,9 +213,8 @@ function planes = ransac_planes(cloud)
         % see if we're satisfied with the number of points in this plane.
         if size(pts_in_plane, 2) > MIN_PTS_IN_PLANE
             disp("Found satisfactory plane.")
-            % DEBUG show the plane. put breakpoint after this bit.
-            show_pointcloud(cloud); hold on
-            fill3(pts(1,:),pts(2,:),pts(3,:),rand(1,3))
+            % DEBUG show the plane.
+            show_triangle(cloud,pts)
 
             num_planes = num_planes + 1;
             % TODO save the plane (A,B,C,D), not just the set of pts.
@@ -159,15 +223,35 @@ function planes = ransac_planes(cloud)
             for ind = 1:size(ind_in_plane,2)
                 cloud(ind_in_plane(1,ind),ind_in_plane(2,ind),:) = [nan;nan;nan];
             end
-%             % update the size, since it's used as index upper bound.
-%             N = size(cloud, 2);
         end
-        trial_num = trial_num + 1
+        trial_num = trial_num + 1;
     end
 end
 
-
-
+% Function to compute surface normal for all points in a pointcloud.
+% @param cloud: MxNx3 set of points forming a pointcloud.
+% @return normals: MxNx3 set of surface normal vectors for pts in cloud.
+function normals = compute_all_normals(cloud)
+    % compute and save to file to save time on repeated V3 runs.
+    try
+        load normals.mat normals;
+        disp("Found normals saved.\nDelete normals.mat if using a different pointcloud.")
+    catch
+        % compute the normals for all pts.
+        M = size(cloud, 1); N = size(cloud, 2);
+        % compute normal vectors for all points.
+        normals = zeros(M,N,3);
+        for i = 1:M
+            for j = 1:N
+                normals(i,j,:) = surface_norm(i, j, cloud);
+            end
+        end
+        disp("Finished computing surface norms.")
+        % save points to .mat to not have to do this every time.
+        save('normals.mat', 'normals')
+        disp("Saving normals to normals.mat to speed up future runs.")
+    end
+end
 
 % Function to compute surface normal at a given point in a pointcloud.
 % @param r, c: indexes of point in cloud.
@@ -218,5 +302,62 @@ function normal = surface_norm(r, c, cloud)
         normal = V(:,1); % already unit length.
     end
 end
+
+%%%%%%%%%%%%%%%%%%% VISUALIZATION FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%
+
+% Function to display a pointcloud in a specified color.
+% @param cloud: MxNx3 organized pointcloud to display.
+% @param color: string, e.g. 'b','r','g','k','y'.
+function show_pointcloud(cloud, color)
+    if ~exist('color', 'var')
+        color = 'black';
+    end
+    % display whole cloud in its own figure.
+    figure; pcshow(cloud,color,'MarkerSize',12); 
+    % make the figure look better visually.
+    set(gcf,'color','w'); set(gca,'color','w');
+    set(gca, 'XColor', [0.15 0.15 0.15], 'YColor', [0.15 0.15 0.15], 'ZColor', [0.15 0.15 0.15])
+end
+
+% Function to display a trianglular plane defined by three points.
+% @param cloud: MxNx3 organized pointcloud to display.
+% @param pts: 3x3 set of three column vectors defining the triangle.
+function show_triangle(cloud, pts)
+    show_pointcloud(cloud); hold on
+    fill3(pts(1,:),pts(2,:),pts(3,:),rand(1,3))
+end
+
+% Function to display pts categorized into different planes.
+% @param planes: 1xP cell array. Each cell is 3xN set of pts.
+function show_planes(planes)
+    % show each plane in diff color.
+    P = size(planes, 2);
+    colors = ['r','g','b','c','m','y','k'];
+    figure; hold on
+    for i = 1:P
+        % colors will loop if there are too many planes for unique colors.
+        pcshow(planes{mod(i,size(colors,2))}',colors(i),'MarkerSize',12);
+    end
+    % make the figure white.
+    set(gcf,'color','w'); set(gca,'color','w');
+    set(gca, 'XColor', [0.15 0.15 0.15], 'YColor', [0.15 0.15 0.15], 'ZColor', [0.15 0.15 0.15])
+end
+
+% Function to display a pointcloud with a sphere at a certain position.
+% @param cloud: MxNx3 organized pointcloud to display.
+% @param radius: float. radius of sphere to display.
+% @param center: 3x1 point of center of sphere.
+function show_sphere(cloud, radius, center)
+    show_pointcloud(cloud); hold on
+    [X,Y,Z] = sphere(20);
+    % scale and move to our desired radius, center.
+    X = X * radius + center(1);
+    Y = Y * radius + center(2);
+    Z = Z * radius + center(3);
+%     plot3(X,Y,Z);
+    mesh(X,Y,Z)
+end
+
+
 
 
