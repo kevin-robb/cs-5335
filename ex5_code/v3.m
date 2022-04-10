@@ -39,10 +39,10 @@ show_cylinder(ptcloud_xyz, center, radius, length, axis)
 function [center, radius, length, axis] = ransac_cylinder(cloud, normals)
     M = size(cloud, 1); N = size(cloud, 2);
     RADIUS_RANGE = [0.05, 0.10]; % meters.
-    NUM_RANSAC_TRIALS = 500; trial_num = 0;
-    MIN_PTS_ON_CYL = 6000; 
-    EPSILON_RAD = 0.02; EPSILON_ANG = 0.2;
-    REGION_SIZE = 50; % radius of area in pixels to search around candidate pt.
+    NUM_RANSAC_TRIALS = 800; trial_num = 0;
+    MIN_PTS_ON_CYL = 8000; 
+    EPSILON_RAD = 0.015; EPSILON_ANG = 0.2;
+    REGION_SIZE = 100; % radius of area in pixels to search around candidate pt.
     while trial_num < NUM_RANSAC_TRIALS
         trial_num = trial_num + 1;
         % choose two points at random, and assume they lie on the cylinder.
@@ -60,6 +60,7 @@ function [center, radius, length, axis] = ransac_cylinder(cloud, normals)
         % choose a second point at random that is nearby.
         r_min = max(1, r1 - REGION_SIZE); r_max = min(M, r1 + REGION_SIZE);
         c_min = max(1, c1 - REGION_SIZE); c_max = min(N, c1 + REGION_SIZE);
+%         r_min = 1; c_min = 1; r_max = M; c_max = N;
         while 1
             % choose random indexes. ensure it has a normal vector.
             r2 = randi([r_min,r_max],1); c2 = randi([c_min,c_max],1);
@@ -67,13 +68,17 @@ function [center, radius, length, axis] = ransac_cylinder(cloud, normals)
                 p2 = [cloud(r2,c2,1); cloud(r2,c2,2); cloud(r2,c2,3)];
                 n2 = [normals(r2,c2,1); normals(r2,c2,2); normals(r2,c2,3)];
                 % make sure pts' surface norms aren't parallel.
-                if ~ abs(dot(n1, n2)) > 1 - EPSILON_ANG
+                if abs(dot(n1, n2)) < 1 - EPSILON_ANG / 10
                     break
                 end
             end
         end
         % find the implied axis direction and a pt on that axis.
         [ctr, axis, rad] = estimate_cylinder(p1, p2, n1, n2);
+        % ensure radius is within range.
+        if rad < RADIUS_RANGE(1) || rad > RADIUS_RANGE(2)
+            continue
+        end
 
         % dist of a pt from the axis line is:
         dist_to_axis = @(p) norm(cross(p-ctr, p-ctr-axis)); %/norm(a)
@@ -104,7 +109,7 @@ function [center, radius, length, axis] = ransac_cylinder(cloud, normals)
                     % keep track of the axis pts on either end.
                     diff = p_axis - ctr;
                     sign_key = num2str(sign(diff(1)) + sign(diff(2)) + sign(diff(3)));
-                    if isKey(extreme_axis_pts, sign_key)
+                    if ~isKey(extreme_axis_pts, sign_key)
                         % first pt in this direction.
                         extreme_axis_pts(sign_key) = p_axis;
                     elseif extreme_axis_pts(sign_key)
@@ -121,14 +126,12 @@ function [center, radius, length, axis] = ransac_cylinder(cloud, normals)
         if size(pts_on_cyl, 2) > MIN_PTS_ON_CYL
             disp(strcat("Found satisfactory cylinder on trial ", num2str(trial_num),"."))
             % compute additional parameters.
+            radius = rad;
             % max distance between two extreme pts on axis = length.
             extremes = values(extreme_axis_pts);
-            length = norm(extremes(1) - extremes(2));
+            length = norm(extremes{1} - extremes{2});
             % center point of cyl is their midpoint.
-            center = (extremes(1) + extremes(2)) / 2;
-
-            % DEBUG show the cylinder.
-            show_cylinder(cloud, center, radius, length, axis)
+            center = (extremes{1} + extremes{2}) / 2;
 
             % save results and exit RANSAC loop.
             return
@@ -544,7 +547,7 @@ function show_cylinder(cloud, center, radius, length, axis)
 %     plot3(X,Y,Z);
     mesh(X,Y,Z)
     % plot the axis line.
-    plot3([center(1),center(1)+axis(1)],[center(2),center(2)+axis(2)],[center(3),center(3)+axis(3)])
+%     plot3([center(1),center(1)+axis(1)],[center(2),center(2)+axis(2)],[center(3),center(3)+axis(3)])
 end
 
 
