@@ -9,19 +9,169 @@ load('ptcloud.mat'); % two MxNx3 pcs called "ptcloud_rgb" and "ptcloud_xyz".
 normals = compute_all_normals(ptcloud_xyz);
 
 %%%%%%%%%%%%%%%%%%%%%%%%% PLANES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% find all planes with RANSAC.
-% planes = ransac_planes(ptcloud_xyz, normals);
+% find all planes with RANSAC. Optional third arg allows execution to stop
+% early when all the planes have been found. Leave out to run all iterations.
+% planes = ransac_planes(ptcloud_xyz, normals, 3);
 % show_planes(planes);
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%% SPHERE %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%5
+%%%%%%%%%%%%%%%%%%%%%%%%%%%% SPHERE %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % find the sphere's center and radius with RANSAC.
-[center, radius] = ransac_sphere(ptcloud_xyz, normals);
-show_sphere(ptcloud_xyz, radius, center);
+% [center, radius] = ransac_sphere(ptcloud_xyz, normals);
+% show_sphere(ptcloud_xyz, radius, center);
 
+%%%%%%%%%%%%%%%%%%%%%%%%%% CYLINDER %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% find the cylinder's center, radius, length, and orientation vector.
+[center, radius, length, axis] = ransac_cylinder(ptcloud_xyz, normals);
+% center = [0;0;0]; radius = 1; length = 1; axis = [1;1;1];
+show_cylinder(ptcloud_xyz, center, radius, length, axis)
 
 
 
 %%%%%%%%%%%%%%%%%% COMPUTATIONAL FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% Function to perform RANSAC to find the cylinder in a scene.
+% @param cloud: MxNx3 array of points.
+% @param normals: MxNx3 set of surface normal vectors for pts in cloud.
+% @return center: 3x1 point of center of cylinder.
+% @return radius: float. radius of cylinder.
+% @return length: float. distance between circular faces.
+% @return axis: 3x1 unit vector describing orientation of axis.
+function [center, radius, length, axis] = ransac_cylinder(cloud, normals)
+    M = size(cloud, 1); N = size(cloud, 2);
+    RADIUS_RANGE = [0.05, 0.10]; % meters.
+    NUM_RANSAC_TRIALS = 500; trial_num = 0;
+    MIN_PTS_ON_SPHERE = 6000; 
+    EPSILON_RAD = 0.02; EPSILON_ANG = 0.2;
+    REGION_SIZE = 50; % radius of area in pixels to search around candidate pt.
+    while trial_num < NUM_RANSAC_TRIALS
+        trial_num = trial_num + 1;
+        % choose two points at random, and assume they lie on the cylinder.
+        % first choose one point.
+        while 1
+            % choose random indexes. ensure it has a normal vector.
+            % (pts with any NaN have already been given 0 for norm vec.)
+            r1 = randi([1,M],1); c1 = randi([1,N],1);
+            if ~all(normals(r1,c1,:) == 0)
+                p1 = [cloud(r1,c1,1); cloud(r1,c1,2); cloud(r1,c1,3)];
+                n1 = [normals(r1,c1,1); normals(r1,c1,2); normals(r1,c1,3)];
+                break
+            end
+        end
+        % choose a second point that is nearby.
+        r_min = max(1, r1 - REGION_SIZE); r_max = min(M, r1 + REGION_SIZE);
+        c_min = max(1, c1 - REGION_SIZE); c_max = min(N, c1 + REGION_SIZE);
+        while 1
+            % choose random indexes. ensure it has a normal vector.
+            % (pts with any NaN have already been given 0 for norm vec.)
+            r2 = randi([r_min,r_max],1); c2 = randi([c_min,c_max],1);
+            if ~all(normals(r2,c2,:) == 0)
+                p2 = [cloud(r2,c2,1); cloud(r2,c2,2); cloud(r2,c2,3)];
+                n2 = [normals(r2,c2,1); normals(r2,c2,2); normals(r2,c2,3)];
+                % make sure pts' surface norms aren't parallel.
+                if ~ abs(dot(n1, n2)) > 1 - EPSILON_ANG
+                    break
+                end
+            end
+        end
+        % find the implied axis direction and a pt on that axis.
+        [ctr, axis] = estimate_cylinder(p1, p2, n1, n2);
+
+        % compute distance of all nearby pts to this line,
+        % and check their norm vec is orthogonal to axis.
+        % if sufficiently many pts fit, call it good.
+        % max distance between two inliers = length.
+        % pt on axis at half length = center.
+
+        
+
+        % -----------------------------------------------------------
+        % sample a radius at random in the range.
+        rad = (RADIUS_RANGE(2)-RADIUS_RANGE(1)) * rand() + RADIUS_RANGE(1);
+        % use pt's normal vector and radius to find center.
+        ctr = pt - n_pt * rad;
+        % DEBUG show the sphere
+%         show_sphere(cloud, rad, ctr)
+
+        % find all other pts on sphere. only check nearby pixels.
+        r_min = max(1, r - REGION_SIZE); r_max = min(M, r + REGION_SIZE);
+        c_min = max(1, c - REGION_SIZE); c_max = min(N, c + REGION_SIZE);
+        pts_on_sphere = []; ind_on_sphere = [];
+        for i = r_min:r_max
+        for j = c_min:c_max
+            p_c = [cloud(i,j,1); cloud(i,j,2); cloud(i,j,3)];
+            if all(normals(i,j,:) == 0)
+                % pt either has NaNs or isn't part of a surface. skip it.
+                continue
+            % candidate pt's dist from ctr must be appx 'rad'.
+            elseif abs(norm(p_c - ctr) - rad) < EPSILON_RAD
+                % normal vector must be appx parallel to vec from ctr.
+                n_c = [normals(i,j,1); normals(i,j,2); normals(i,j,3)];
+                if abs(dot((p_c-ctr)/norm(p_c-ctr), n_c)) > 1 - EPSILON_ANG
+                    % candidate could actually be on the sphere.
+                    ind_on_sphere = [ind_on_sphere, [i;j]];
+                    pts_on_sphere = [pts_on_sphere, p_c];
+                end
+            end
+        end
+        end
+
+        % check if enough points fit the sphere.
+        if size(pts_on_sphere, 2) > MIN_PTS_ON_SPHERE
+            disp(strcat("Found satisfactory sphere on trial ", num2str(trial_num),"."))
+            % DEBUG show the sphere.
+%             show_sphere(cloud, rad, ctr)
+
+            % recompute sphere params with only the inliers.
+            [center, radius] = snap_sphere(cloud, normals, ind_on_sphere, RADIUS_RANGE);
+            % DEBUG show the sphere.
+%             show_sphere(cloud, radius, center)
+
+            % save results and exit RANSAC loop.
+            return
+        end
+    end
+    disp(strcat("Failed to find sphere in scene after ",num2str(NUM_RANSAC_TRIALS)," RANSAC iterations."))
+end
+
+
+% Function to find a cylinder's central axis and a point on that axis.
+% @param p1, p2: 3x1 XYZ coords of points on cylinder's lateral surface.
+% @param n1, n2: 3x1 surface normal vectors at p1 and p2.
+% @return ctr: 3x1 point on cylinder's central axis.
+% @return axis: 3x1 unit vector, direction of axis.
+function [ctr, axis] = estimate_cylinder(p1, p2, n1, n2)  
+    % use surface norms of pts to find central axis unit vector.
+    axis = cross(n1, n2); axis = axis / norm(axis);
+    % project pts/vectors onto plane orthogonal to axis.
+    % plane will include p1 and use axis as normal vector.
+    % dist of a point x to the plane is:
+    dist_to_plane = @(x) dot(axis, x) - dot(axis, p1);
+    % project p2 onto plane.
+    p2_proj = p2 - dist_to_plane(p2) * axis;
+    % find projections of n1 and n2 on plane.
+    n1_proj = n1 - dist_to_plane(p1 + n1) * axis;
+    n2_proj = n2 - dist_to_plane(p2_proj + n2) * axis;
+    % create coord system on plane.
+    x_plane = n1_proj / norm(n1_proj);
+    y_plane = cross(x_plane, axis);
+    y_plane = y_plane / norm(y_plane);
+    % make change of basis matrix.
+    B = [x_plane'; y_plane'];
+    % change all coords to plane frame.
+    % pts relative to p1.
+    p1_plane = B * (p1 - p1);
+    p2_plane = B * (p2_proj - p1);
+    n1_plane = B * n1_proj;
+    n2_plane = B * n2_proj;
+    % compute intersection of lines in this frame.
+    c_x = (n1_plane(2)*n2_plane(1)*p1_plane(1) - n2_plane(2)*n1_plane(1)*p2_plane(1) - n1_plane(1)*n2_plane(1)*(p1_plane(2)-p2_plane(2))) / (n1_plane(2)*n2_plane(1) - n2_plane(2)*n1_plane(1));
+    c_y = n1_plane(2)/n1_plane(1)*(c_x-p1_plane(1)) + p1_plane(2);
+    % transform center pt back to 3d coords.
+    ctr = B' * [c_x; c_y] + p1;
+end
+
+
+% ------------------------------------------------------------------
 
 % Function to perform RANSAC to find the sphere in a scene.
 % @param cloud: MxNx3 array of points.
@@ -145,14 +295,18 @@ end
 % Function to perform RANSAC to find all planes in a scene.
 % @param cloud: MxNx3 array of points.
 % @param normals: MxNx3 set of surface normal vectors for pts in cloud.
+% @param NUM_PLANES: int. (Optional). number of planes to find in scene, if known.
 % @return planes: 1xP cell array of planes. Each cell is 3xN set of pts.
-function planes = ransac_planes(cloud, normals)
+function planes = ransac_planes(cloud, normals, NUM_PLANES)
+    if ~exist('NUM_PLANES','var')
+        NUM_PLANES = Inf;
+    end
     M = size(cloud, 1); N = size(cloud, 2);
     num_planes = 0; planes = {};
-    NUM_RANSAC_TRIALS = 300; trial_num = 1;
+    NUM_RANSAC_TRIALS = 500; trial_num = 1;
     MIN_PTS_IN_PLANE = 20000; 
     EPSILON_POS = 0.01; EPSILON_ANG = 0.1;
-    while trial_num < NUM_RANSAC_TRIALS
+    while trial_num < NUM_RANSAC_TRIALS && num_planes < NUM_PLANES
         % choose 3 points at random, assume they form a plane, and find all
         % points that could lie on that plane. 
         pts = [];
@@ -170,10 +324,10 @@ function planes = ransac_planes(cloud, normals)
         n = cross(v1, v2); % using 1st pt as point.
         n = n / norm(n); % make unit vector.
         % eq. of plane: Ax+By+Cz+D=0.
-        A = n(1); B = n(2); C = n(3);
-        D = -A*pts(1,1) - B*pts(2,1) - C*pts(3,1);
+%         A = n(1); B = n(2); C = n(3);
+%         D = -A*pts(1,1) - B*pts(2,1) - C*pts(3,1);
         % dist of a point x to the plane is then:
-        plane_eq = @(x) (A*x(1) + B*x(2) + C*x(3) +D);
+        plane_eq = @(x) dot(n, x) - dot(n, pts(:,1));
         
         % DEBUG show the plane.
 %         show_triangle(cloud,pts)
@@ -351,6 +505,39 @@ function show_sphere(cloud, radius, center)
     mesh(X,Y,Z)
 end
 
-
+% Function to display a pointcloud with a cylinder at a certain position.
+% @param cloud: MxNx3 organized pointcloud to display.
+% @param center: 3x1 point of center of cylinder.
+% @param radius: float. radius of cylinder.
+% @param length: float. distance between circular faces.
+% @param axis: 3x1 unit vector describing orientation of axis.
+function show_cylinder(cloud, center, radius, length, axis)
+    show_pointcloud(cloud); hold on
+    % create cylinder of height 1, with base at origin.
+    n = 20;
+    [X,Y,Z] = cylinder(radius, n);
+    % center it vertically and scale to proper height.
+    Z = (Z - 0.5) * length;
+    % transform to proper orientation of axis.
+    x = axis(1); y = axis(2); z = axis(3);
+    R = inv([(x^2*z+y^2)/(x^2+y^2), x*y*(z-1)/(x^2+y^2), -x;
+         x*y*(z-1)/(x^2+y^2), (y^2*z+x^2)/(x^2+y^2), -y;
+         x, y, z]);
+    for i = 1:2
+    for j = 1:(n+1)
+        pt = [X(i,j); Y(i,j); Z(i,j)];
+        pt = R * pt;
+        X(i,j) = pt(1); Y(i,j) = pt(2); Z(i,j) = pt(3);
+    end
+    end
+    % move to our desired center pt.
+    X = X + center(1);
+    Y = Y + center(2);
+    Z = Z + center(3);
+%     plot3(X,Y,Z);
+    mesh(X,Y,Z)
+    % plot the axis line.
+    plot3([center(1),center(1)+axis(1)],[center(2),center(2)+axis(2)],[center(3),center(3)+axis(3)])
+end
 
 
