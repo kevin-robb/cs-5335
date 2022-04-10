@@ -24,7 +24,7 @@ normals = compute_all_normals(ptcloud_xyz);
 % Function to perform RANSAC to find the sphere in a scene.
 % @param cloud: MxNx3 array of points.
 % @param normals: MxNx3 set of surface normal vectors for pts in cloud.
-% @return TODO
+% @return center, radius of sphere.
 function [center, radius] = ransac_sphere(cloud, normals)
     M = size(cloud, 1); N = size(cloud, 2);
     RADIUS_RANGE = [0.05, 0.10]; % meters.
@@ -45,8 +45,6 @@ function [center, radius] = ransac_sphere(cloud, normals)
                 break
             end
         end
-%         disp("Chose random point")
-%         pt
         % sample a radius at random in the range.
         rad = (RADIUS_RANGE(2)-RADIUS_RANGE(1)) * rand() + RADIUS_RANGE(1);
         % use pt's normal vector and radius to find center.
@@ -66,11 +64,9 @@ function [center, radius] = ransac_sphere(cloud, normals)
                 continue
             % candidate pt's dist from ctr must be appx 'rad'.
             elseif abs(norm(p_c - ctr) - rad) < EPSILON_RAD
-%                 disp("Distance is good.")
                 % normal vector must be appx parallel to vec from ctr.
                 n_c = [normals(i,j,1); normals(i,j,2); normals(i,j,3)];
                 if abs(dot((p_c-ctr)/norm(p_c-ctr), n_c)) > 1 - EPSILON_ANG
-%                     disp("Angle is good.")
                     % candidate could actually be on the sphere.
                     ind_on_sphere = [ind_on_sphere, [i;j]];
                     pts_on_sphere = [pts_on_sphere, p_c];
@@ -78,75 +74,65 @@ function [center, radius] = ransac_sphere(cloud, normals)
             end
         end
         end
-%         disp("Found all pts on sphere")
-%         pts_on_sphere
 
         % check if enough points fit the sphere.
         if size(pts_on_sphere, 2) > MIN_PTS_ON_SPHERE
-            disp("Found satisfactory sphere.")
+            disp(strcat("Found satisfactory sphere on trial ", num2str(trial_num),"."))
             % DEBUG show the sphere and iteration count.
-            show_sphere(cloud, rad, ctr)
-            trial_num
+%             show_sphere(cloud, rad, ctr)
 
             % recompute sphere params with only the inliers.
-%             [rad, ctr] = ransac_sphere(pts_on_sphere, normals);
+            [radius, center] = snap_sphere(cloud, normals, ind_on_sphere, RADIUS_RANGE);
+            % DEBUG show the sphere.
+            show_sphere(cloud, radius, center)
 
             % save results and exit RANSAC loop.
-            radius = rad; center = ctr;
             return
         end
     end
 end
 
-% Function to estimate sphere and find inliers.
-% function [radius, center] = estimate_sphere(cloud, normals, inlier_inds)
-%     % choose a point at random, and assume it lies on the sphere.
-%     while 1
-%         % choose random indexes. ensure it has a normal vector.
-%         % (pts with any NaN have already been given 0 for norm vec.)
-%         r = randi([1,M],1); c = randi([1,N],1);
-%         if ~all(normals(r,c,:) == 0)
-%             pt = [cloud(r,c,1); cloud(r,c,2); cloud(r,c,3)];
-%             n_pt = [normals(r,c,1); normals(r,c,2); normals(r,c,3)];
-%             break
-%         end
-%     end
-% %         disp("Chose random point")
-% %         pt
-%     % sample a radius at random in the range.
-%     rad = (RADIUS_RANGE(2)-RADIUS_RANGE(1)) * rand() + RADIUS_RANGE(1);
-%     % use pt's normal vector and radius to find center.
-%     ctr = pt - n_pt * rad;
-%     % DEBUG show the sphere
-% %         show_sphere(cloud, rad, ctr)
-% 
-%     % find all other pts on sphere. only check nearby pixels.
-%     r_min = max(1, r - REGION_SIZE); r_max = min(M, r + REGION_SIZE);
-%     c_min = max(1, c - REGION_SIZE); c_max = min(N, c + REGION_SIZE);
-%     pts_on_sphere = []; ind_on_sphere = [];
-%     for i = intersect(r_min:r_max, inlier_inds(1,:))
-%     for j = intersect(c_min:c_max, inlier_inds(2,:))
-%         p_c = [cloud(i,j,1); cloud(i,j,2); cloud(i,j,3)];
-%         if all(normals(i,j,:) == 0)
-%             % pt either has NaNs or isn't part of a surface. skip it.
-%             continue
-%         % candidate pt's dist from ctr must be appx 'rad'.
-%         elseif abs(norm(p_c - ctr) - rad) < EPSILON_RAD
-% %                 disp("Distance is good.")
-%             % normal vector must be appx parallel to vec from ctr.
-%             n_c = [normals(i,j,1); normals(i,j,2); normals(i,j,3)];
-%             if abs(dot((p_c-ctr)/norm(p_c-ctr), n_c)) > 1 - EPSILON_ANG
-% %                     disp("Angle is good.")
-%                 % candidate could actually be on the sphere.
-%                 ind_on_sphere = [ind_on_sphere, [i;j]];
-%                 pts_on_sphere = [pts_on_sphere, p_c];
-%             end
-%         end
-%     end
-%     end
-% %         disp("Found all pts on sphere")
-% %         pts_on_sphere
-% end
+% Function to refine sphere estimate using set of inliers.
+function [radius, center] = snap_sphere(cloud, normals, inlier_inds, RADIUS_RANGE)
+    M = size(inlier_inds, 2);
+    disp(strcat("Number of inliers = ", num2str(M),"."))
+    ITERATIONS = 30; iter_num = 0;
+    best_error = Inf; best_rad = 0; best_ctr = [0;0;0];
+    while iter_num < ITERATIONS
+        iter_num = iter_num + 1;
+        % choose an inlier to use to calculate sphere params.
+        ind = randi([1,M],1);
+        r = inlier_inds(1,ind); c = inlier_inds(2,ind);
+        pt = [cloud(r,c,1); cloud(r,c,2); cloud(r,c,3)];
+        n_pt = [normals(r,c,1); normals(r,c,2); normals(r,c,3)];
+        % sample a radius in the range.
+        rad = (RADIUS_RANGE(2)-RADIUS_RANGE(1)) * rand() + RADIUS_RANGE(1);
+        % use pt's normal vector and radius to find center.
+        ctr = pt - n_pt * rad;
+
+        % compute error for all inliers if this is the sphere.
+        error = 0;
+        for ind = 1:M
+            i = inlier_inds(1,ind); j = inlier_inds(2,ind);
+            p_c = [cloud(i,j,1); cloud(i,j,2); cloud(i,j,3)];
+            n_c = [normals(i,j,1); normals(i,j,2); normals(i,j,3)];
+            % pos error is dist to ctr - rad.
+            pos_error = abs(norm(p_c - ctr) - rad);
+            % angle error is divergence from parallel to sphere surface norm.
+            ang_error = 1 - abs(dot((p_c-ctr)/norm(p_c-ctr), n_c));
+            % update error for this sphere.
+            error = error + pos_error + 0.1 * ang_error;
+        end
+
+        % if this is the best sphere so far, save its params.
+        if error < best_error
+            best_error = error;
+            best_rad = rad; best_ctr = ctr;
+        end
+    end
+    % return the best sphere params found.
+    radius = best_rad; center = best_ctr;
+end
 
 
 % Function to perform RANSAC to find all planes in a scene.
@@ -235,7 +221,7 @@ function normals = compute_all_normals(cloud)
     % compute and save to file to save time on repeated V3 runs.
     try
         load normals.mat normals;
-        disp("Found normals saved.\nDelete normals.mat if using a different pointcloud.")
+        disp("Found normals saved. Delete normals.mat if using a different pointcloud.")
     catch
         % compute the normals for all pts.
         M = size(cloud, 1); N = size(cloud, 2);
