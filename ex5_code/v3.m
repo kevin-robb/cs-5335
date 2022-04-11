@@ -41,8 +41,8 @@ function [center, radius, length, axis] = ransac_cylinder(cloud, normals)
     RADIUS_RANGE = [0.05, 0.10]; % meters.
     NUM_RANSAC_TRIALS = 800; trial_num = 0;
     MIN_PTS_ON_CYL = 8000; 
-    EPSILON_RAD = 0.015; EPSILON_ANG = 0.2;
-    REGION_SIZE = 100; % radius of area in pixels to search around candidate pt.
+    EPSILON_RAD = 0.01; EPSILON_ANG = 0.05;
+    REGION_SIZE = 200; % radius of area in pixels to search around candidate pt.
     while trial_num < NUM_RANSAC_TRIALS
         trial_num = trial_num + 1;
         % choose two points at random, and assume they lie on the cylinder.
@@ -100,15 +100,15 @@ function [center, radius, length, axis] = ransac_cylinder(cloud, normals)
                 continue
             % candidate pt's dist from ctr must be appx 'rad'.
             elseif abs(dist_to_axis(p_c) - rad) < EPSILON_RAD
-                % normal vector must be appx perpendicular to axis.
+                % normal vector must be appx parallel to vec to axis.
                 n_c = [normals(i,j,1); normals(i,j,2); normals(i,j,3)];
-                if abs(dot(n_c, axis)) < EPSILON_ANG
-                    % candidate could actually be on the sphere.
+                if 1 - abs(dot(n_c, (p_c-p_axis)/norm(p_c-p_axis))) < EPSILON_ANG
+                    % candidate is an inlier.
                     ind_on_cyl = [ind_on_cyl, [i;j]];
                     pts_on_cyl = [pts_on_cyl, p_c];
                     % keep track of the axis pts on either end.
                     diff = p_axis - ctr;
-                    sign_key = num2str(sign(diff(1)) + sign(diff(2)) + sign(diff(3)));
+                    sign_key = num2str(sign(diff(1)) * sign(diff(2)) * sign(diff(3)));
                     if ~isKey(extreme_axis_pts, sign_key)
                         % first pt in this direction.
                         extreme_axis_pts(sign_key) = p_axis;
@@ -128,10 +128,23 @@ function [center, radius, length, axis] = ransac_cylinder(cloud, normals)
             % compute additional parameters.
             radius = rad;
             % max distance between two extreme pts on axis = length.
-            extremes = values(extreme_axis_pts);
-            length = norm(extremes{1} - extremes{2});
+%             length = 0;
+%             for i = 1:size(pts_on_cyl, 2)-1
+%             for j = i+1:size(pts_on_cyl, 2)
+%                 length = max(length, norm(pts_on_cyl(:,i) - pts_on_cyl(:,j)));
+%             end
+%             end
+            
+            % length = dist between the two extreme pts on axis.
+            extreme_1 = extreme_axis_pts('-1');
+            extreme_2 = extreme_axis_pts('1');
+            length = norm(extreme_1 - extreme_2);
             % center point of cyl is their midpoint.
-            center = (extremes{1} + extremes{2}) / 2;
+            center = (extreme_1 + extreme_2) / 2;
+
+            % show just the inliers.
+            show_pointcloud(cloud); hold on
+            show_inliers(pts_on_cyl)
 
             % save results and exit RANSAC loop.
             return
@@ -167,13 +180,13 @@ function [ctr, axis, rad] = estimate_cylinder(p1, p2, n1, n2)
     B = [x_plane'; y_plane'];
     % change all coords to plane frame.
     % pts relative to p1.
-    p1_plane = B * (p1 - p1);
+%     p1_plane = [0; 0];
     p2_plane = B * (p2_proj - p1);
     n1_plane = B * n1_proj;
     n2_plane = B * n2_proj;
     % compute intersection of lines in this frame.
-    c_x = (n1_plane(2)*n2_plane(1)*p1_plane(1) - n2_plane(2)*n1_plane(1)*p2_plane(1) - n1_plane(1)*n2_plane(1)*(p1_plane(2)-p2_plane(2))) / (n1_plane(2)*n2_plane(1) - n2_plane(2)*n1_plane(1));
-    c_y = n1_plane(2)/n1_plane(1)*(c_x-p1_plane(1)) + p1_plane(2);
+    c_x = (- n2_plane(2)*n1_plane(1)*p2_plane(1) + n1_plane(1)*n2_plane(1)*p2_plane(2)) / (n1_plane(2)*n2_plane(1) - n2_plane(2)*n1_plane(1));
+    c_y = n1_plane(2)/n1_plane(1)*c_x;
     % transform center pt back to 3d coords.
     ctr = B' * [c_x; c_y] + p1;
     % compute the implied radius of the cylinder.
@@ -550,4 +563,13 @@ function show_cylinder(cloud, center, radius, length, axis)
 %     plot3([center(1),center(1)+axis(1)],[center(2),center(2)+axis(2)],[center(3),center(3)+axis(3)])
 end
 
+% Function to display pts categorized as inliers (or any set of pts).
+% @param inliers: 3xN set of pts.
+function show_inliers(inliers)
+%     figure; hold on
+    pcshow(inliers','r','MarkerSize',12);
+    % make the figure white.
+    set(gcf,'color','w'); set(gca,'color','w');
+    set(gca, 'XColor', [0.15 0.15 0.15], 'YColor', [0.15 0.15 0.15], 'ZColor', [0.15 0.15 0.15])
+end
 
