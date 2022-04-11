@@ -6,7 +6,8 @@ load('ptcloud.mat'); % two MxNx3 pcs called "ptcloud_rgb" and "ptcloud_xyz".
 % show_pointcloud(ptcloud_xyz, ptcloud_rgb)
 
 % compute surface norms.
-normals = compute_all_normals(ptcloud_xyz);
+USE_PRECOMPUTED_NORMALS = true;
+normals = compute_all_normals(ptcloud_xyz, USE_PRECOMPUTED_NORMALS);
 
 %%%%%%%%%%%%%%%%%%%%%%%%% PLANES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % find all planes with RANSAC. Optional third arg allows execution to stop
@@ -127,13 +128,6 @@ function [center, radius, length, axis] = ransac_cylinder(cloud, normals)
             disp(strcat("Found satisfactory cylinder on trial ", num2str(trial_num),"."))
             % compute additional parameters.
             radius = rad;
-            % max distance between two extreme pts on axis = length.
-%             length = 0;
-%             for i = 1:size(pts_on_cyl, 2)-1
-%             for j = i+1:size(pts_on_cyl, 2)
-%                 length = max(length, norm(pts_on_cyl(:,i) - pts_on_cyl(:,j)));
-%             end
-%             end
             
             % length = dist between the two extreme pts on axis.
             extreme_1 = extreme_axis_pts('-1');
@@ -400,26 +394,35 @@ end
 
 % Function to compute surface normal for all points in a pointcloud.
 % @param cloud: MxNx3 set of points forming a pointcloud.
+% @param USE_PRECOMPUTED_NORMALS: boolean. True will create/use
+%        normals.mat. False will always compute them from cloud.
 % @return normals: MxNx3 set of surface normal vectors for pts in cloud.
-function normals = compute_all_normals(cloud)
+function normals = compute_all_normals(cloud, USE_PRECOMPUTED_NORMALS)
     % compute and save to file to save time on repeated V3 runs.
     try
-        load normals.mat normals;
-        disp("Found normals saved. Delete normals.mat if using a different pointcloud.")
+        if USE_PRECOMPUTED_NORMALS
+            load normals.mat normals;
+            disp("Found normals.mat. Delete if using a new pointcloud.")
+        else
+            throw(MException(".","Skipping search for normals.mat."))
+        end
     catch
+        % either file was not found, or we want to generate fresh.
         % compute the normals for all pts.
         M = size(cloud, 1); N = size(cloud, 2);
         % compute normal vectors for all points.
         normals = zeros(M,N,3);
         for i = 1:M
-            for j = 1:N
-                normals(i,j,:) = surface_norm(i, j, cloud);
-            end
+        for j = 1:N
+            normals(i,j,:) = surface_norm(i, j, cloud);
+        end
         end
         disp("Finished computing surface norms.")
-        % save points to .mat to not have to do this every time.
-        save('normals.mat', 'normals')
-        disp("Saving normals to normals.mat to speed up future runs.")
+        if USE_PRECOMPUTED_NORMALS
+            % save points to .mat to not have to do this every time.
+            save('normals.mat', 'normals')
+            disp("Saving normals to normals.mat to speed up future runs.")
+        end
     end
 end
 
