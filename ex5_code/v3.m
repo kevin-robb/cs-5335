@@ -5,23 +5,24 @@ load('ptcloud.mat'); % two MxNx3 pcs called "ptcloud_rgb" and "ptcloud_xyz".
 % display whole pointcloud.
 % show_pointcloud(ptcloud_xyz, ptcloud_rgb)
 
-% compute surface norms.
+% compute surface norms. (~30 seconds)
 USE_PRECOMPUTED_NORMALS = true;
 normals = compute_all_normals(ptcloud_xyz, USE_PRECOMPUTED_NORMALS);
 
 %%%%%%%%%%%%%%%%%%%%%%%%% PLANES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% find all planes with RANSAC. Optional third arg allows execution to stop
-% early when all the planes have been found. Leave out to run all iterations.
+% find all planes with RANSAC. (~30 seconds)
+% Optional third arg allows execution to stop early when all the 
+% planes have been found. Leave out to run all iterations.
 % planes = ransac_planes(ptcloud_xyz, normals, 3);
 % show_planes(planes);
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%% SPHERE %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% find the sphere's center and radius with RANSAC.
+% find the sphere's params with RANSAC. (~2 seconds)
 % [center, radius] = ransac_sphere(ptcloud_xyz, normals);
 % show_sphere(ptcloud_xyz, radius, center);
 
 %%%%%%%%%%%%%%%%%%%%%%%%%% CYLINDER %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% find the cylinder's center, radius, length, and orientation vector.
+% find the cylinder's params with RANSAC. (~ 45 seconds)
 [center, radius, length, axis] = ransac_cylinder(ptcloud_xyz, normals);
 % center = [0;0;0]; radius = 1; length = 1; axis = [1;1;1];
 show_cylinder(ptcloud_xyz, center, radius, length, axis)
@@ -126,15 +127,19 @@ function [center, radius, length, axis] = ransac_cylinder(cloud, normals)
         % if sufficiently many pts fit, call it good.
         if size(pts_on_cyl, 2) > MIN_PTS_ON_CYL
             disp(strcat("Found satisfactory cylinder on trial ", num2str(trial_num),"."))
-            % compute additional parameters.
-            radius = rad;
             
-            % length = dist between the two extreme pts on axis.
-            extreme_1 = extreme_axis_pts('-1');
-            extreme_2 = extreme_axis_pts('1');
-            length = norm(extreme_1 - extreme_2);
-            % center point of cyl is their midpoint.
-            center = (extreme_1 + extreme_2) / 2;
+            % snap to the best cylinder for this set of inliers.
+            [center, radius, length, axis] = snap_cylinder(cloud, normals, ind_on_cyl, RADIUS_RANGE, EPSILON_ANG);
+
+%             % compute additional parameters.
+%             radius = rad;
+%             
+%             % length = dist between the two extreme pts on axis.
+%             extreme_1 = extreme_axis_pts('-1');
+%             extreme_2 = extreme_axis_pts('1');
+%             length = norm(extreme_1 - extreme_2);
+%             % center point of cyl is their midpoint.
+%             center = (extreme_1 + extreme_2) / 2;
 
             % show just the inliers.
             show_pointcloud(cloud); hold on
@@ -145,6 +150,88 @@ function [center, radius, length, axis] = ransac_cylinder(cloud, normals)
         end
     end
     disp(strcat("Failed to find cylinder in scene after ",num2str(NUM_RANSAC_TRIALS)," RANSAC iterations."))
+end
+
+% Function to snap cylinder params to max accuracy using only inliers.
+function [center, radius, length, axis] = snap_cylinder(cloud, normals, inlier_inds, RADIUS_RANGE, EPSILON_ANG)
+    M = size(inlier_inds, 2);
+    disp(strcat("Number of inliers = ", num2str(M),"."))
+    ITERATIONS = 30; iter_num = 0;
+    best_error = Inf; best_rad = 0; best_ctr = [0;0;0]; 
+    best_length = 0; best_axis = [0;0;0];
+    while iter_num < ITERATIONS
+        iter_num = iter_num + 1;
+        % choose two inliers at random.
+        ind1 = randi([1,M],1); 
+        r1 = inlier_inds(1,ind1); c1 = inlier_inds(2,ind1);
+        p1 = [cloud(r1,c1,1); cloud(r1,c1,2); cloud(r1,c1,3)];
+        n1 = [normals(r1,c1,1); normals(r1,c1,2); normals(r1,c1,3)];
+        while 1
+            ind2 = randi([1,M],1);
+            r2 = inlier_inds(1,ind2); c2 = inlier_inds(2,ind2);
+            p2 = [cloud(r2,c2,1); cloud(r2,c2,2); cloud(r2,c2,3)];
+            n2 = [normals(r2,c2,1); normals(r2,c2,2); normals(r2,c2,3)];
+            % make sure pts' surface norms aren't parallel.
+            if abs(dot(n1, n2)) < 1 - EPSILON_ANG / 10
+                break
+            end
+        end
+        % find the implied axis direction and a pt on that axis.
+        [ctr, axis, rad] = estimate_cylinder(p1, p2, n1, n2);
+        % ensure radius is within range.
+        if rad < RADIUS_RANGE(1) || rad > RADIUS_RANGE(2)
+            continue
+        end
+        % dist of a pt from the axis line is:
+        dist_to_axis = @(p) norm(cross(p-ctr, p-ctr-axis)); %/norm(a)
+        % pt on axis nearest to p is:
+        nearest_on_axis = @(p) ctr - dot(ctr-p,axis)*axis; %/norm(a)^2
+    
+        % track extreme pts on axis, keyed by sign diff.
+        extreme_axis_pts = containers.Map;
+        % compute distance of all nearby pts to this line,
+        % and check their norm vec is orthogonal to axis.
+        error = 0;
+        for ind = 1:M
+            i = inlier_inds(1,ind); j = inlier_inds(2,ind);
+            p_c = [cloud(i,j,1); cloud(i,j,2); cloud(i,j,3)];
+            % find point on axis at min dist from p_c.
+            p_axis = nearest_on_axis(p_c);
+            % candidate pt's dist from ctr must be appx 'rad'.
+            error_pos = abs(dist_to_axis(p_c) - rad);
+            % normal vector must be appx parallel to vec to axis.
+            n_c = [normals(i,j,1); normals(i,j,2); normals(i,j,3)];
+            error_ang = 1 - abs(dot(n_c, (p_c-p_axis)/norm(p_c-p_axis)));
+            error = error + error_pos + 0.1 * error_ang;
+                
+            % keep track of the axis pts on either end.
+            diff = p_axis - ctr;
+            sign_key = num2str(sign(diff(1)) * sign(diff(2)) * sign(diff(3)));
+            if ~isKey(extreme_axis_pts, sign_key)
+                % first pt in this direction.
+                extreme_axis_pts(sign_key) = p_axis;
+            elseif extreme_axis_pts(sign_key)
+                % not the first in this direction. save farthest.
+                if norm(extreme_axis_pts(sign_key) - ctr) < norm(p_axis - ctr)
+                    extreme_axis_pts(sign_key) = p_axis;
+                end
+            end
+        end
+        % check if this is the best cylinder so far.
+        if error < best_error
+%             best_ctr = ctr; 
+            best_rad = rad; best_axis = axis;
+            % length = dist between the two extreme pts on axis.
+            extreme_1 = extreme_axis_pts('-1');
+            extreme_2 = extreme_axis_pts('1');
+            best_length = norm(extreme_1 - extreme_2);
+            % center point of cyl is their midpoint.
+            best_ctr = (extreme_1 + extreme_2) / 2;
+        end
+    end
+    % return the best set of values found.
+    radius = best_rad; axis = best_axis; 
+    center = best_ctr; length = best_length;
 end
 
 
@@ -186,9 +273,6 @@ function [ctr, axis, rad] = estimate_cylinder(p1, p2, n1, n2)
     % compute the implied radius of the cylinder.
     rad = norm(ctr - p1);
 end
-
-
-% ------------------------------------------------------------------
 
 % Function to perform RANSAC to find the sphere in a scene.
 % @param cloud: MxNx3 array of points.
