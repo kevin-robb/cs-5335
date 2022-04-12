@@ -4,26 +4,31 @@ close all; clear all;
 load('ptcloud.mat'); % two MxNx3 pcs called "ptcloud_rgb" and "ptcloud_xyz".
 % display whole pointcloud.
 % show_pointcloud(ptcloud_xyz, ptcloud_rgb)
+cloud = ptcloud_xyz;
 
-% compute surface norms. (~30 seconds)
+% compute surface norms. (~15 seconds)
 USE_PRECOMPUTED_NORMALS = true;
-normals = compute_all_normals(ptcloud_xyz, USE_PRECOMPUTED_NORMALS);
+normals = compute_all_normals(cloud, USE_PRECOMPUTED_NORMALS);
 
 %%%%%%%%%%%%%%%%%%%%%%%%% PLANES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % find all planes with RANSAC. (~30 seconds)
 % Optional third arg allows execution to stop early when all the 
 % planes have been found. Leave out to run all iterations.
-% planes = ransac_planes(ptcloud_xyz, normals, 3);
-% show_planes(planes);
+[planes, inlier_indices] = ransac_planes(cloud, normals, 3);
+show_planes(planes);
+% remove plane points from consideration for other geometries.
+cloud = strip_inliers(cloud, inlier_indices);
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%% SPHERE %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% find the sphere's params with RANSAC. (~2 seconds)
-% [center, radius] = ransac_sphere(ptcloud_xyz, normals);
-% show_sphere(ptcloud_xyz, radius, center);
+% find the sphere's params with RANSAC. (~1 second)
+[center, radius, inlier_indices] = ransac_sphere(cloud, normals);
+show_sphere(ptcloud_xyz, radius, center);
+% remove sphere points from consideration for other geometries.
+cloud = strip_inliers(cloud, inlier_indices);
 
 %%%%%%%%%%%%%%%%%%%%%%%%%% CYLINDER %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% find the cylinder's params with RANSAC. (~ 45 seconds)
-[center, radius, length, axis] = ransac_cylinder(ptcloud_xyz, normals);
+% find the cylinder's params with RANSAC. (~45-90 seconds)
+[center, radius, length, axis] = ransac_cylinder(cloud, normals);
 % center = [0;0;0]; radius = 1; length = 1; axis = [1;1;1];
 show_cylinder(ptcloud_xyz, center, radius, length, axis)
 
@@ -41,7 +46,7 @@ show_cylinder(ptcloud_xyz, center, radius, length, axis)
 function [center, radius, length, axis] = ransac_cylinder(cloud, normals)
     M = size(cloud, 1); N = size(cloud, 2);
     RADIUS_RANGE = [0.05, 0.10]; % meters.
-    NUM_RANSAC_TRIALS = 800; trial_num = 0;
+    NUM_RANSAC_TRIALS = 1000; trial_num = 0;
     MIN_PTS_ON_CYL = 8000; 
     EPSILON_RAD = 0.01; EPSILON_ANG = 0.05;
     REGION_SIZE = 200; % radius of area in pixels to search around candidate pt.
@@ -62,7 +67,6 @@ function [center, radius, length, axis] = ransac_cylinder(cloud, normals)
         % choose a second point at random that is nearby.
         r_min = max(1, r1 - REGION_SIZE); r_max = min(M, r1 + REGION_SIZE);
         c_min = max(1, c1 - REGION_SIZE); c_max = min(N, c1 + REGION_SIZE);
-%         r_min = 1; c_min = 1; r_max = M; c_max = N;
         while 1
             % choose random indexes. ensure it has a normal vector.
             r2 = randi([r_min,r_max],1); c2 = randi([c_min,c_max],1);
@@ -138,10 +142,10 @@ function [center, radius, length, axis] = ransac_cylinder(cloud, normals)
             center = (extreme_1 + extreme_2) / 2;
 
             % DEBUG show cylinder before snapping.
-            show_cylinder(cloud, center, rad, length, axis, 'Pre-snap cylinder')
+            show_cylinder(cloud, center, radius, length, axis, 'Pre-snap cylinder')
             
             % snap to the best cylinder for this set of inliers.
-            [radius, axis] = snap_cylinder(cloud, normals, ind_on_cyl, center, rad, axis, RADIUS_RANGE);
+%             [radius, axis] = snap_cylinder(cloud, normals, ind_on_cyl, center, radius, axis, RADIUS_RANGE);
 
             % show just the inliers.
             show_pointcloud(cloud); hold on
@@ -158,11 +162,9 @@ end
 function [radius, axis] = snap_cylinder(cloud, normals, inlier_inds, ctr, rad_est, axis_est, RADIUS_RANGE)
     M = size(inlier_inds, 2);
     disp(strcat("Number of inliers = ", num2str(M),"."))
-    ITERATIONS = 100; iter_num = 0;
-    best_error = Inf; best_rad = rad_est; %best_ctr = ctr_est; 
-%     best_length = 0; 
+    ITERATIONS = 200; iter_num = 0;
+    best_error = Inf; best_rad = rad_est;
     best_axis = axis_est;
-%     length = 0.5; center = ctr;
     while iter_num < ITERATIONS
         iter_num = iter_num + 1;
         % generate a random perturbation of the center, rad, and axis 
@@ -176,16 +178,12 @@ function [radius, axis] = snap_cylinder(cloud, normals, inlier_inds, ctr, rad_es
         rz = SE3.Rz(0.5 * rand());
         perturbation = rx.R * ry.R * rz.R;
         axis = perturbation * best_axis;
-        % use same ctr pt.
-%         ctr = best_ctr;
 
         % dist of a pt from the axis line is:
         dist_to_axis = @(p) norm(cross(p-ctr, p-ctr-axis)); %/norm(a)
         % pt on axis nearest to p is:
         nearest_on_axis = @(p) ctr - dot(ctr-p,axis)*axis; %/norm(a)^2
     
-%         % track extreme pts on axis, keyed by sign diff.
-%         extreme_axis_pts = containers.Map;
         % compute distance of all nearby pts to this line,
         % and check their norm vec is orthogonal to axis.
         error = 0;
@@ -200,39 +198,17 @@ function [radius, axis] = snap_cylinder(cloud, normals, inlier_inds, ctr, rad_es
             n_c = [normals(i,j,1); normals(i,j,2); normals(i,j,3)];
             error_ang = 1 - abs(dot(n_c, (p_c-p_axis)/norm(p_c-p_axis)));
             error = error + error_pos; % + error_ang;
-                
-%             % keep track of the axis pts on either end.
-%             diff = p_axis - ctr;
-%             sign_key = num2str(sign(diff(1)) * sign(diff(2)) * sign(diff(3)));
-%             if ~isKey(extreme_axis_pts, sign_key)
-%                 % first pt in this direction.
-%                 extreme_axis_pts(sign_key) = p_axis;
-%             elseif extreme_axis_pts(sign_key)
-%                 % not the first in this direction. save farthest.
-%                 if norm(extreme_axis_pts(sign_key) - ctr) < norm(p_axis - ctr)
-%                     extreme_axis_pts(sign_key) = p_axis;
-%                 end
-%             end
         end
-%         keys(extreme_axis_pts) %DEBUG
         % check if this is the best cylinder so far.
         if error < best_error
             best_error = error;
 %             best_rad = rad; 
             best_axis = axis;
-%             % length = dist between the two extreme pts on axis.
-%             extreme_1 = extreme_axis_pts('-1');
-%             extreme_2 = extreme_axis_pts('1');
-%             best_length = norm(extreme_1 - extreme_2);
-%             % center point of cyl is their midpoint.
-%             best_ctr = (extreme_1 + extreme_2) / 2;
         end
     end
     % return the best set of values found.
-    radius = best_rad; axis = best_axis; 
-%     center = best_ctr; length = best_length;
+    radius = best_rad; axis = best_axis;
 end
-
 
 % Function to find a cylinder's central axis and a point on that axis.
 % @param p1, p2: 3x1 XYZ coords of points on cylinder's lateral surface.
@@ -277,7 +253,7 @@ end
 % @param cloud: MxNx3 array of points.
 % @param normals: MxNx3 set of surface normal vectors for pts in cloud.
 % @return center, radius of sphere.
-function [center, radius] = ransac_sphere(cloud, normals)
+function [center, radius, inlier_indices] = ransac_sphere(cloud, normals)
     M = size(cloud, 1); N = size(cloud, 2);
     RADIUS_RANGE = [0.05, 0.10]; % meters.
     NUM_RANSAC_TRIALS = 500; trial_num = 0;
@@ -335,6 +311,7 @@ function [center, radius] = ransac_sphere(cloud, normals)
 
             % recompute sphere params with only the inliers.
             [center, radius] = snap_sphere(cloud, normals, ind_on_sphere, RADIUS_RANGE);
+            inlier_indices = ind_on_sphere;
             % DEBUG show the sphere.
 %             show_sphere(cloud, radius, center)
 
@@ -397,12 +374,12 @@ end
 % @param normals: MxNx3 set of surface normal vectors for pts in cloud.
 % @param NUM_PLANES: int. (Optional). number of planes to find in scene, if known.
 % @return planes: 1xP cell array of planes. Each cell is 3xN set of pts.
-function planes = ransac_planes(cloud, normals, NUM_PLANES)
+function [planes, inlier_indices] = ransac_planes(cloud, normals, NUM_PLANES)
     if ~exist('NUM_PLANES','var')
         NUM_PLANES = Inf;
     end
     M = size(cloud, 1); N = size(cloud, 2);
-    num_planes = 0; planes = {};
+    num_planes = 0; planes = {}; inlier_indices = [];
     NUM_RANSAC_TRIALS = 500; trial_num = 1;
     MIN_PTS_IN_PLANE = 20000; 
     EPSILON_POS = 0.01; EPSILON_ANG = 0.1;
@@ -466,12 +443,24 @@ function planes = ransac_planes(cloud, normals, NUM_PLANES)
             num_planes = num_planes + 1;
             % TODO save the plane (A,B,C,D), not just the set of pts.
             planes{num_planes} = pts_in_plane;
+            inlier_indices = [inlier_indices, ind_in_plane];
             % ensure these points won't be considered for future planes.
             for ind = 1:size(ind_in_plane,2)
                 cloud(ind_in_plane(1,ind),ind_in_plane(2,ind),:) = [nan;nan;nan];
             end
         end
         trial_num = trial_num + 1;
+    end
+end
+
+% Function to remove points from a cloud by setting them to NaN.
+% @param cloud: MxNx3 pointcloud.
+% @param indices: 2xI set of [row;column] of pts to remove.
+% @return cloud with points removed.
+function cloud = strip_inliers(cloud, indices)
+    for ind = 1:size(indices, 2)
+        r = indices(1,ind); c = indices(2,ind);
+        cloud(r,c,1) = nan; cloud(r,c,2) = nan; cloud(r,c,3) = nan;
     end
 end
 
