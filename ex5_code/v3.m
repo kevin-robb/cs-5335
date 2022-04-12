@@ -14,23 +14,18 @@ normals = compute_all_normals(cloud, USE_PRECOMPUTED_NORMALS);
 % find all planes with RANSAC. (~30 seconds)
 % Optional third arg allows execution to stop early when all the 
 % planes have been found. Leave out to run all iterations.
-[planes, inlier_indices] = ransac_planes(cloud, normals, 3);
+[planes, cloud] = ransac_planes(cloud, normals, 3);
 show_planes(planes);
-% remove plane points from consideration for other geometries.
-cloud = strip_inliers(cloud, inlier_indices);
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%% SPHERE %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % find the sphere's params with RANSAC. (~1 second)
-[center, radius, inlier_indices] = ransac_sphere(cloud, normals);
-show_sphere(ptcloud_xyz, radius, center);
-% remove sphere points from consideration for other geometries.
-cloud = strip_inliers(cloud, inlier_indices);
+[center, radius, cloud] = ransac_sphere(cloud, normals);
+show_sphere(cloud, radius, center);
 
 %%%%%%%%%%%%%%%%%%%%%%%%%% CYLINDER %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % find the cylinder's params with RANSAC. (~45-90 seconds)
 [center, radius, length, axis] = ransac_cylinder(cloud, normals);
-% center = [0;0;0]; radius = 1; length = 1; axis = [1;1;1];
-show_cylinder(ptcloud_xyz, center, radius, length, axis)
+show_cylinder(cloud, center, radius, length, axis)
 
 
 
@@ -48,17 +43,17 @@ function [center, radius, length, axis] = ransac_cylinder(cloud, normals)
     RADIUS_RANGE = [0.05, 0.10]; % meters.
     NUM_RANSAC_TRIALS = 1000; trial_num = 0;
     MIN_PTS_ON_CYL = 8000; 
-    EPSILON_RAD = 0.01; EPSILON_ANG = 0.05;
+    EPSILON_RAD = 0.02; EPSILON_ANG = 0.1;
     REGION_SIZE = 200; % radius of area in pixels to search around candidate pt.
     while trial_num < NUM_RANSAC_TRIALS
-        trial_num = trial_num + 1;
+        trial_num = trial_num + 1
         % choose two points at random, and assume they lie on the cylinder.
         % first choose one point at random.
         while 1
             % choose random indexes. ensure it has a normal vector.
             % (pts with any NaN have already been given 0 for norm vec.)
             r1 = randi([1,M],1); c1 = randi([1,N],1);
-            if ~all(normals(r1,c1,:) == 0)
+            if ~all(normals(r1,c1,:) == 0) && ~any(isnan(cloud(r1,c1,:)))
                 p1 = [cloud(r1,c1,1); cloud(r1,c1,2); cloud(r1,c1,3)];
                 n1 = [normals(r1,c1,1); normals(r1,c1,2); normals(r1,c1,3)];
                 break
@@ -70,21 +65,32 @@ function [center, radius, length, axis] = ransac_cylinder(cloud, normals)
         while 1
             % choose random indexes. ensure it has a normal vector.
             r2 = randi([r_min,r_max],1); c2 = randi([c_min,c_max],1);
-            if ~all(normals(r2,c2,:) == 0)
+            if ~all(normals(r2,c2,:) == 0) && ~any(isnan(cloud(r2,c2,:)))
                 p2 = [cloud(r2,c2,1); cloud(r2,c2,2); cloud(r2,c2,3)];
                 n2 = [normals(r2,c2,1); normals(r2,c2,2); normals(r2,c2,3)];
                 % make sure pts' surface norms aren't parallel.
-                if abs(dot(n1, n2)) < 1 - EPSILON_ANG / 10
+                if abs(dot(n1, n2)) < 1 %- EPSILON_ANG / 10
                     break
                 end
             end
         end
-        % find the implied axis direction and a pt on that axis.
-        [ctr, axis, rad] = estimate_cylinder(p1, p2, n1, n2);
-        % ensure radius is within range.
-        if rad < RADIUS_RANGE(1) || rad > RADIUS_RANGE(2)
-            continue
-        end
+        p1
+        p2
+%         % find the implied axis direction and a pt on that axis.
+%         [ctr, axis, rad] = estimate_cylinder(p1, p2, n1, n2);
+%         % ensure radius is within range.
+%         if rad < RADIUS_RANGE(1) || rad > RADIUS_RANGE(2)
+%             continue
+%         end
+        % ----------------------------------
+        % Do it randomly instead of using my hard earned geometries.
+        % use surface norms of pts to find central axis unit vector.
+        axis = cross(n1, n2); axis = axis / norm(axis);
+        % sample a radius at random in the range.
+        rad = (RADIUS_RANGE(2)-RADIUS_RANGE(1)) * rand() + RADIUS_RANGE(1);
+        % use pt's normal vector and radius to find center.
+        ctr = p1 - n1 * rad;
+        % ----------------------------------
 
         % dist of a pt from the axis line is:
         dist_to_axis = @(p) norm(cross(p-ctr, p-ctr-axis)); %/norm(a)
@@ -142,7 +148,7 @@ function [center, radius, length, axis] = ransac_cylinder(cloud, normals)
             center = (extreme_1 + extreme_2) / 2;
 
             % DEBUG show cylinder before snapping.
-            show_cylinder(cloud, center, radius, length, axis, 'Pre-snap cylinder')
+%             show_cylinder(cloud, center, radius, length, axis, 'Pre-snap cylinder')
             
             % snap to the best cylinder for this set of inliers.
 %             [radius, axis] = snap_cylinder(cloud, normals, ind_on_cyl, center, radius, axis, RADIUS_RANGE);
@@ -253,13 +259,13 @@ end
 % @param cloud: MxNx3 array of points.
 % @param normals: MxNx3 set of surface normal vectors for pts in cloud.
 % @return center, radius of sphere.
-function [center, radius, inlier_indices] = ransac_sphere(cloud, normals)
+function [center, radius, cloud] = ransac_sphere(cloud, normals)
     M = size(cloud, 1); N = size(cloud, 2);
     RADIUS_RANGE = [0.05, 0.10]; % meters.
     NUM_RANSAC_TRIALS = 500; trial_num = 0;
     MIN_PTS_ON_SPHERE = 6000; 
-    EPSILON_RAD = 0.02; EPSILON_ANG = 0.2;
-    REGION_SIZE = 50; % radius of area in pixels to search around candidate pt.
+    EPSILON_RAD = 0.015; EPSILON_ANG = 0.1;
+    REGION_SIZE = 150; % radius of area in pixels to search around candidate pt.
     while trial_num < NUM_RANSAC_TRIALS
         trial_num = trial_num + 1;
         % choose a point at random, and assume it lies on the sphere.
@@ -308,12 +314,33 @@ function [center, radius, inlier_indices] = ransac_sphere(cloud, normals)
             disp(strcat("Found satisfactory sphere on trial ", num2str(trial_num),"."))
             % DEBUG show the sphere.
 %             show_sphere(cloud, rad, ctr)
+            
+            % show just the inliers.
+            show_pointcloud(cloud); hold on
+            show_inliers(pts_on_sphere)
 
             % recompute sphere params with only the inliers.
             [center, radius] = snap_sphere(cloud, normals, ind_on_sphere, RADIUS_RANGE);
-            inlier_indices = ind_on_sphere;
             % DEBUG show the sphere.
 %             show_sphere(cloud, radius, center)
+            
+            % remove points that are within a larger tolerance as well.
+            ind_to_remove = [];
+            for i = 1:M
+            for j = 1:N
+                % check if pt is close to being on sphere.
+                p_c = [cloud(i,j,1); cloud(i,j,2); cloud(i,j,3)];
+                p = [cloud(i,j,1); cloud(i,j,2); cloud(i,j,3)];
+                if any(isnan(p))
+                    continue
+                end
+                if abs(norm(p_c - center) - radius) < 2*EPSILON_RAD
+                    ind_to_remove = [ind_to_remove, [i;j]];
+                end
+            end
+            end
+            % ensure these points won't be considered for future planes.
+            cloud = strip_inliers(cloud, ind_to_remove);
 
             % save results and exit RANSAC loop.
             return
@@ -330,7 +357,7 @@ end
 % @return center, radius of sphere.
 function [center, radius] = snap_sphere(cloud, normals, inlier_inds, RADIUS_RANGE)
     M = size(inlier_inds, 2);
-    disp(strcat("Number of inliers = ", num2str(M),"."))
+%     disp(strcat("Number of inliers = ", num2str(M),"."))
     ITERATIONS = 30; iter_num = 0;
     best_error = Inf; best_rad = 0; best_ctr = [0;0;0];
     while iter_num < ITERATIONS
@@ -374,15 +401,15 @@ end
 % @param normals: MxNx3 set of surface normal vectors for pts in cloud.
 % @param NUM_PLANES: int. (Optional). number of planes to find in scene, if known.
 % @return planes: 1xP cell array of planes. Each cell is 3xN set of pts.
-function [planes, inlier_indices] = ransac_planes(cloud, normals, NUM_PLANES)
+function [planes, cloud] = ransac_planes(cloud, normals, NUM_PLANES)
     if ~exist('NUM_PLANES','var')
         NUM_PLANES = Inf;
     end
     M = size(cloud, 1); N = size(cloud, 2);
-    num_planes = 0; planes = {}; inlier_indices = [];
-    NUM_RANSAC_TRIALS = 500; trial_num = 1;
-    MIN_PTS_IN_PLANE = 20000; 
-    EPSILON_POS = 0.01; EPSILON_ANG = 0.1;
+    num_planes = 0; planes = {};
+    NUM_RANSAC_TRIALS = 1000; trial_num = 1;
+    MIN_PTS_IN_PLANE = 19000; 
+    EPSILON_POS = 0.015; EPSILON_ANG = 0.1;
     while trial_num < NUM_RANSAC_TRIALS && num_planes < NUM_PLANES
         % choose 3 points at random, assume they form a plane, and find all
         % points that could lie on that plane. 
@@ -415,11 +442,11 @@ function [planes, inlier_indices] = ransac_planes(cloud, normals, NUM_PLANES)
         for i = 1:M
         for j = 1:N
             % check if pt is close to being on plane.
-            p = [cloud(i,j,1); cloud(i,j,2); cloud(i,j,3)];
-            if any(isnan(p))
+            p_c = [cloud(i,j,1); cloud(i,j,2); cloud(i,j,3)];
+            if any(isnan(p_c))
                 continue
             end
-            if abs(plane_eq(p)) < EPSILON_POS
+            if abs(plane_eq(p_c)) < EPSILON_POS
                 % check if pt's surface norm is appx parallel to plane's.
                 if all(normals(i,j,:) == 0)
                     % pt is not part of a surface.
@@ -429,25 +456,41 @@ function [planes, inlier_indices] = ransac_planes(cloud, normals, NUM_PLANES)
                 if abs(dot(n, nml)) > 1 - EPSILON_ANG
                     % point's surface normal vector is good.
                     ind_in_plane = [ind_in_plane, [i;j]];
-                    pts_in_plane = [pts_in_plane, p];
+                    pts_in_plane = [pts_in_plane, p_c];
                 end
             end
         end
         end
         % see if we're satisfied with the number of points in this plane.
         if size(pts_in_plane, 2) > MIN_PTS_IN_PLANE
-            disp("Found satisfactory plane.")
+            disp(strcat("Found satisfactory plane on trial ", num2str(trial_num),"."))
             % DEBUG show the plane.
-            show_triangle(cloud,pts)
+            show_triangle(cloud, pts)
+
+            % show just the inliers.
+            show_pointcloud(cloud); hold on
+            show_inliers(pts_in_plane)
 
             num_planes = num_planes + 1;
             % TODO save the plane (A,B,C,D), not just the set of pts.
             planes{num_planes} = pts_in_plane;
-            inlier_indices = [inlier_indices, ind_in_plane];
-            % ensure these points won't be considered for future planes.
-            for ind = 1:size(ind_in_plane,2)
-                cloud(ind_in_plane(1,ind),ind_in_plane(2,ind),:) = [nan;nan;nan];
+
+            % remove points that are within a larger tolerance of the plane as well.
+            ind_to_remove = [];
+            for i = 1:M
+            for j = 1:N
+                % check if pt is close to being on plane.
+                p_c = [cloud(i,j,1); cloud(i,j,2); cloud(i,j,3)];
+                if any(isnan(p_c))
+                    continue
+                end
+                if abs(plane_eq(p_c)) < 2 * EPSILON_POS
+                    ind_to_remove = [ind_to_remove, [i;j]];
+                end
             end
+            end
+            % ensure these points won't be considered for future planes.
+            cloud = strip_inliers(cloud, ind_to_remove);
         end
         trial_num = trial_num + 1;
     end
@@ -459,8 +502,7 @@ end
 % @return cloud with points removed.
 function cloud = strip_inliers(cloud, indices)
     for ind = 1:size(indices, 2)
-        r = indices(1,ind); c = indices(2,ind);
-        cloud(r,c,1) = nan; cloud(r,c,2) = nan; cloud(r,c,3) = nan;
+        cloud(indices(1,ind),indices(2,ind),:) = [nan;nan;nan];
     end
 end
 
@@ -569,7 +611,7 @@ end
 % @param pts: 3x3 set of three column vectors defining the triangle.
 function show_triangle(cloud, pts)
     show_pointcloud(cloud); hold on
-    fill3(pts(1,:),pts(2,:),pts(3,:),rand(1,3))
+    fill3(pts(1,:),pts(2,:),pts(3,:),'red')
 end
 
 % Function to display pts categorized into different planes.
