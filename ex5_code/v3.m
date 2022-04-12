@@ -129,7 +129,7 @@ function [center, radius, length, axis] = ransac_cylinder(cloud, normals)
             disp(strcat("Found satisfactory cylinder on trial ", num2str(trial_num),"."))
             
             % snap to the best cylinder for this set of inliers.
-            [center, radius, length, axis] = snap_cylinder(cloud, normals, ind_on_cyl, RADIUS_RANGE, EPSILON_ANG);
+            [center, radius, length, axis] = snap_cylinder(cloud, normals, ind_on_cyl, ctr, rad, axis, RADIUS_RANGE);
 
 %             % compute additional parameters.
 %             radius = rad;
@@ -153,35 +153,25 @@ function [center, radius, length, axis] = ransac_cylinder(cloud, normals)
 end
 
 % Function to snap cylinder params to max accuracy using only inliers.
-function [center, radius, length, axis] = snap_cylinder(cloud, normals, inlier_inds, RADIUS_RANGE, EPSILON_ANG)
+function [center, radius, length, axis] = snap_cylinder(cloud, normals, inlier_inds, ctr_est, rad_est, axis_est, RADIUS_RANGE)
     M = size(inlier_inds, 2);
     disp(strcat("Number of inliers = ", num2str(M),"."))
     ITERATIONS = 30; iter_num = 0;
-    best_error = Inf; best_rad = 0; best_ctr = [0;0;0]; 
-    best_length = 0; best_axis = [0;0;0];
+    best_error = Inf; best_rad = rad_est; best_ctr = ctr_est; 
+    best_length = 0; best_axis = axis_est;
     while iter_num < ITERATIONS
         iter_num = iter_num + 1;
-        % choose two inliers at random.
-        ind1 = randi([1,M],1); 
-        r1 = inlier_inds(1,ind1); c1 = inlier_inds(2,ind1);
-        p1 = [cloud(r1,c1,1); cloud(r1,c1,2); cloud(r1,c1,3)];
-        n1 = [normals(r1,c1,1); normals(r1,c1,2); normals(r1,c1,3)];
-        while 1
-            ind2 = randi([1,M],1);
-            r2 = inlier_inds(1,ind2); c2 = inlier_inds(2,ind2);
-            p2 = [cloud(r2,c2,1); cloud(r2,c2,2); cloud(r2,c2,3)];
-            n2 = [normals(r2,c2,1); normals(r2,c2,2); normals(r2,c2,3)];
-            % make sure pts' surface norms aren't parallel.
-            if abs(dot(n1, n2)) < 1 - EPSILON_ANG / 10
-                break
-            end
-        end
-        % find the implied axis direction and a pt on that axis.
-        [ctr, axis, rad] = estimate_cylinder(p1, p2, n1, n2);
-        % ensure radius is within range.
-        if rad < RADIUS_RANGE(1) || rad > RADIUS_RANGE(2)
-            continue
-        end
+        % generate a random perturbation of the center, rad, and axis 
+        % found by RANSAC from the full set of points.
+        
+        % sample a radius at random in the range.
+        rad = (RADIUS_RANGE(2)-RADIUS_RANGE(1)) * rand() + RADIUS_RANGE(1);
+        % perturb axis with small random rotation.
+        perturbation = SE3.rand().R * 0.05;
+        axis = perturbation * best_axis;
+        % use same ctr pt.
+        ctr = best_ctr;
+
         % dist of a pt from the axis line is:
         dist_to_axis = @(p) norm(cross(p-ctr, p-ctr-axis)); %/norm(a)
         % pt on axis nearest to p is:
@@ -217,9 +207,9 @@ function [center, radius, length, axis] = snap_cylinder(cloud, normals, inlier_i
                 end
             end
         end
+        keys(extreme_axis_pts) %DEBUG
         % check if this is the best cylinder so far.
         if error < best_error
-%             best_ctr = ctr; 
             best_rad = rad; best_axis = axis;
             % length = dist between the two extreme pts on axis.
             extreme_1 = extreme_axis_pts('-1');
