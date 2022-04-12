@@ -127,19 +127,21 @@ function [center, radius, length, axis] = ransac_cylinder(cloud, normals)
         % if sufficiently many pts fit, call it good.
         if size(pts_on_cyl, 2) > MIN_PTS_ON_CYL
             disp(strcat("Found satisfactory cylinder on trial ", num2str(trial_num),"."))
+
+            % compute additional parameters.
+            radius = rad;
+            % length = dist between the two extreme pts on axis.
+            extreme_1 = extreme_axis_pts('-1');
+            extreme_2 = extreme_axis_pts('1');
+            length = norm(extreme_1 - extreme_2);
+            % center point of cyl is their midpoint.
+            center = (extreme_1 + extreme_2) / 2;
+
+            % DEBUG show cylinder before snapping.
+            show_cylinder(cloud, center, rad, length, axis, 'Pre-snap cylinder')
             
             % snap to the best cylinder for this set of inliers.
-            [center, radius, length, axis] = snap_cylinder(cloud, normals, ind_on_cyl, ctr, rad, axis, RADIUS_RANGE);
-
-%             % compute additional parameters.
-%             radius = rad;
-%             
-%             % length = dist between the two extreme pts on axis.
-%             extreme_1 = extreme_axis_pts('-1');
-%             extreme_2 = extreme_axis_pts('1');
-%             length = norm(extreme_1 - extreme_2);
-%             % center point of cyl is their midpoint.
-%             center = (extreme_1 + extreme_2) / 2;
+            [radius, axis] = snap_cylinder(cloud, normals, ind_on_cyl, center, rad, axis, RADIUS_RANGE);
 
             % show just the inliers.
             show_pointcloud(cloud); hold on
@@ -153,32 +155,37 @@ function [center, radius, length, axis] = ransac_cylinder(cloud, normals)
 end
 
 % Function to snap cylinder params to max accuracy using only inliers.
-function [center, radius, length, axis] = snap_cylinder(cloud, normals, inlier_inds, ctr_est, rad_est, axis_est, RADIUS_RANGE)
+function [radius, axis] = snap_cylinder(cloud, normals, inlier_inds, ctr, rad_est, axis_est, RADIUS_RANGE)
     M = size(inlier_inds, 2);
     disp(strcat("Number of inliers = ", num2str(M),"."))
-    ITERATIONS = 30; iter_num = 0;
-    best_error = Inf; best_rad = rad_est; best_ctr = ctr_est; 
-    best_length = 0; best_axis = axis_est;
+    ITERATIONS = 100; iter_num = 0;
+    best_error = Inf; best_rad = rad_est; %best_ctr = ctr_est; 
+%     best_length = 0; 
+    best_axis = axis_est;
+%     length = 0.5; center = ctr;
     while iter_num < ITERATIONS
         iter_num = iter_num + 1;
         % generate a random perturbation of the center, rad, and axis 
         % found by RANSAC from the full set of points.
         
         % sample a radius at random in the range.
-        rad = (RADIUS_RANGE(2)-RADIUS_RANGE(1)) * rand() + RADIUS_RANGE(1);
+%         rad = (RADIUS_RANGE(2)-RADIUS_RANGE(1)) * rand() + RADIUS_RANGE(1);
         % perturb axis with small random rotation.
-        perturbation = SE3.rand().R * 0.05;
+        rx = SE3.Rx(0.5 * rand()); 
+        ry = SE3.Ry(0.5 * rand());
+        rz = SE3.Rz(0.5 * rand());
+        perturbation = rx.R * ry.R * rz.R;
         axis = perturbation * best_axis;
         % use same ctr pt.
-        ctr = best_ctr;
+%         ctr = best_ctr;
 
         % dist of a pt from the axis line is:
         dist_to_axis = @(p) norm(cross(p-ctr, p-ctr-axis)); %/norm(a)
         % pt on axis nearest to p is:
         nearest_on_axis = @(p) ctr - dot(ctr-p,axis)*axis; %/norm(a)^2
     
-        % track extreme pts on axis, keyed by sign diff.
-        extreme_axis_pts = containers.Map;
+%         % track extreme pts on axis, keyed by sign diff.
+%         extreme_axis_pts = containers.Map;
         % compute distance of all nearby pts to this line,
         % and check their norm vec is orthogonal to axis.
         error = 0;
@@ -188,40 +195,42 @@ function [center, radius, length, axis] = snap_cylinder(cloud, normals, inlier_i
             % find point on axis at min dist from p_c.
             p_axis = nearest_on_axis(p_c);
             % candidate pt's dist from ctr must be appx 'rad'.
-            error_pos = abs(dist_to_axis(p_c) - rad);
+            error_pos = abs(dist_to_axis(p_c) - best_rad);
             % normal vector must be appx parallel to vec to axis.
             n_c = [normals(i,j,1); normals(i,j,2); normals(i,j,3)];
             error_ang = 1 - abs(dot(n_c, (p_c-p_axis)/norm(p_c-p_axis)));
-            error = error + error_pos + 0.1 * error_ang;
+            error = error + error_pos; % + error_ang;
                 
-            % keep track of the axis pts on either end.
-            diff = p_axis - ctr;
-            sign_key = num2str(sign(diff(1)) * sign(diff(2)) * sign(diff(3)));
-            if ~isKey(extreme_axis_pts, sign_key)
-                % first pt in this direction.
-                extreme_axis_pts(sign_key) = p_axis;
-            elseif extreme_axis_pts(sign_key)
-                % not the first in this direction. save farthest.
-                if norm(extreme_axis_pts(sign_key) - ctr) < norm(p_axis - ctr)
-                    extreme_axis_pts(sign_key) = p_axis;
-                end
-            end
+%             % keep track of the axis pts on either end.
+%             diff = p_axis - ctr;
+%             sign_key = num2str(sign(diff(1)) * sign(diff(2)) * sign(diff(3)));
+%             if ~isKey(extreme_axis_pts, sign_key)
+%                 % first pt in this direction.
+%                 extreme_axis_pts(sign_key) = p_axis;
+%             elseif extreme_axis_pts(sign_key)
+%                 % not the first in this direction. save farthest.
+%                 if norm(extreme_axis_pts(sign_key) - ctr) < norm(p_axis - ctr)
+%                     extreme_axis_pts(sign_key) = p_axis;
+%                 end
+%             end
         end
-        keys(extreme_axis_pts) %DEBUG
+%         keys(extreme_axis_pts) %DEBUG
         % check if this is the best cylinder so far.
         if error < best_error
-            best_rad = rad; best_axis = axis;
-            % length = dist between the two extreme pts on axis.
-            extreme_1 = extreme_axis_pts('-1');
-            extreme_2 = extreme_axis_pts('1');
-            best_length = norm(extreme_1 - extreme_2);
-            % center point of cyl is their midpoint.
-            best_ctr = (extreme_1 + extreme_2) / 2;
+            best_error = error;
+%             best_rad = rad; 
+            best_axis = axis;
+%             % length = dist between the two extreme pts on axis.
+%             extreme_1 = extreme_axis_pts('-1');
+%             extreme_2 = extreme_axis_pts('1');
+%             best_length = norm(extreme_1 - extreme_2);
+%             % center point of cyl is their midpoint.
+%             best_ctr = (extreme_1 + extreme_2) / 2;
         end
     end
     % return the best set of values found.
     radius = best_rad; axis = best_axis; 
-    center = best_ctr; length = best_length;
+%     center = best_ctr; length = best_length;
 end
 
 
@@ -611,8 +620,15 @@ end
 % @param radius: float. radius of cylinder.
 % @param length: float. distance between circular faces.
 % @param axis: 3x1 unit vector describing orientation of axis.
-function show_cylinder(cloud, center, radius, length, axis)
-    show_pointcloud(cloud); hold on
+% @param plot_title: string. optional title for plot.
+function show_cylinder(cloud, center, radius, length, axis, plot_title)
+    if ~exist('plot_title','var')
+        plot_title = "Cylinder detected in scene";
+    end
+    show_pointcloud(cloud); 
+    % set the title.
+    title(plot_title);
+    hold on
     % create cylinder of height 1, with base at origin.
     n = 20;
     [X,Y,Z] = cylinder(radius, n);
@@ -648,5 +664,7 @@ function show_inliers(inliers)
     % make the figure white.
     set(gcf,'color','w'); set(gca,'color','w');
     set(gca, 'XColor', [0.15 0.15 0.15], 'YColor', [0.15 0.15 0.15], 'ZColor', [0.15 0.15 0.15])
+    % set the title.
+    title('Inliers');
 end
 
