@@ -1,18 +1,27 @@
 % Code for V1.
 close all;
 %%%%%%%%%%%%%%%%%%%%%%% READ IN IMAGES %%%%%%%%%%%%%%%%%%%%%%%%%%
-% im1 = iread('filename1.jpg','mono','double');
-% im2 = iread('filename1.jpg','mono','double');
 image_dir = "book_images/";
 scene = imageDatastore(image_dir);
 % scene = imageDatastore(strcat('Coursework/cs5335/ex5_code/',image_dir));
 % montage(scene.Files); % display images in one figure.
 num_images = numel(scene.Files);
+
+% uncomment this to use webcam instead of scene.
+% (need matlab support package for usb webcam).
+% cam = webcam;
+
 % read in template of book cover, and scale to about the height of images.
 I_template = iread('catch_22_template.jpg');
-scale_factor = size(I_template, 1) / size(readimage(scene,1), 1) * 1.1; %~3.7
+if ~exist('cam', 'var')
+    scale_factor = size(I_template, 1) / size(readimage(scene,1), 1) * 1.1;
+else
+    scale_factor = size(I_template, 1) / size(snapshot(cam), 1) * 1.1;
+end
 I_template = scale_down_img(I_template, scale_factor);
 t_h = size(I_template, 1); t_w = size(I_template, 2);
+
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % first get features from template.
 sf_template = isurf(I_template, 'nfeat', 800);
@@ -22,7 +31,13 @@ idisp(I_template); sf_template.plot_scale('g');
 
 % get features in each image and compare to template.
 for n = 1:num_images
-    I = readimage(scene, n);
+    % get an image, either from the scene or the webcam.
+    if ~exist('cam', 'var')
+        I = readimage(scene, n);
+    else
+        img = snapshot(cam);
+    end
+
     % detect SURF features.
     sf = isurf(I, 'nfeat', 800);
     % show features on one image.
@@ -35,7 +50,7 @@ for n = 1:num_images
     idisp({I_template, I}, 'dark');
     m.subset(100).plot('w');
     %--------------------------------------------------------------
-    % use RANSAC to compute homography between template and I.
+    % use custom RANSAC to compute homography between template and I.
     transform = tf_ransac(m);
     % show these transformed points on the plot for visual inspection.
     hold on
@@ -77,6 +92,10 @@ for n = 1:num_images
     tf_corners_prev = tf_corners;
 end
 
+% release the webcam, if we were using it.
+if exist('cam', 'var')
+    clear cam
+end
 
 
 %%%%%%%%%%%%%%%%%%% FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%
