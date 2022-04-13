@@ -7,7 +7,7 @@ load('ptcloud.mat'); % two MxNx3 pcs called "ptcloud_rgb" and "ptcloud_xyz".
 cloud = ptcloud_xyz;
 
 % compute surface norms. (~15 seconds)
-USE_PRECOMPUTED_NORMALS = true;
+USE_PRECOMPUTED_NORMALS = false;
 normals = compute_all_normals(cloud, USE_PRECOMPUTED_NORMALS);
 
 %%%%%%%%%%%%%%%%%%%%%%%%% PLANES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -19,13 +19,13 @@ show_planes(planes);
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%% SPHERE %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % find the sphere's params with RANSAC. (~1 second)
-[center, radius, cloud] = ransac_sphere(cloud, normals);
-show_sphere(cloud, radius, center);
+[center_sphere, radius_sphere, cloud] = ransac_sphere(cloud, normals);
+show_sphere(cloud, radius_sphere, center_sphere);
 
 %%%%%%%%%%%%%%%%%%%%%%%%%% CYLINDER %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% find the cylinder's params with RANSAC. (~45-90 seconds)
-[center, radius, length, axis] = ransac_cylinder(cloud, normals);
-show_cylinder(cloud, center, radius, length, axis)
+% find the cylinder's params with RANSAC. (~45 seconds)
+[center_cyl, radius_cyl, length_cyl, axis_cyl] = ransac_cylinder(cloud, normals);
+show_cylinder(cloud, center_cyl, radius_cyl, length_cyl, axis_cyl)
 
 
 
@@ -42,11 +42,11 @@ function [center, radius, length, axis] = ransac_cylinder(cloud, normals)
     M = size(cloud, 1); N = size(cloud, 2);
     RADIUS_RANGE = [0.05, 0.10]; % meters.
     NUM_RANSAC_TRIALS = 1000; trial_num = 0;
-    MIN_PTS_ON_CYL = 8000; 
-    EPSILON_RAD = 0.02; EPSILON_ANG = 0.1;
+    MIN_PTS_ON_CYL = 12000; 
+    EPSILON_RAD = 0.01; EPSILON_ANG = 0.05;
     REGION_SIZE = 200; % radius of area in pixels to search around candidate pt.
     while trial_num < NUM_RANSAC_TRIALS
-        trial_num = trial_num + 1
+        trial_num = trial_num + 1;
         % choose two points at random, and assume they lie on the cylinder.
         % first choose one point at random.
         while 1
@@ -74,22 +74,20 @@ function [center, radius, length, axis] = ransac_cylinder(cloud, normals)
                 end
             end
         end
-        p1
-        p2
-%         % find the implied axis direction and a pt on that axis.
-%         [ctr, axis, rad] = estimate_cylinder(p1, p2, n1, n2);
-%         % ensure radius is within range.
-%         if rad < RADIUS_RANGE(1) || rad > RADIUS_RANGE(2)
-%             continue
-%         end
+        % find the implied axis direction and a pt on that axis.
+        [ctr, axis, rad] = estimate_cylinder(p1, p2, n1, n2);
+        % ensure radius is within range.
+        if rad < RADIUS_RANGE(1) || rad > RADIUS_RANGE(2)
+            continue
+        end
         % ----------------------------------
-        % Do it randomly instead of using my hard earned geometries.
-        % use surface norms of pts to find central axis unit vector.
-        axis = cross(n1, n2); axis = axis / norm(axis);
-        % sample a radius at random in the range.
-        rad = (RADIUS_RANGE(2)-RADIUS_RANGE(1)) * rand() + RADIUS_RANGE(1);
-        % use pt's normal vector and radius to find center.
-        ctr = p1 - n1 * rad;
+%         % Do it randomly instead of using my hard earned geometries.
+%         % use surface norms of pts to find central axis unit vector.
+%         axis = cross(n1, n2); axis = axis / norm(axis);
+%         % sample a radius at random in the range.
+%         rad = (RADIUS_RANGE(2)-RADIUS_RANGE(1)) * rand() + RADIUS_RANGE(1);
+%         % use pt's normal vector and radius to find center.
+%         ctr = p1 - n1 * rad;
         % ----------------------------------
 
         % dist of a pt from the axis line is:
