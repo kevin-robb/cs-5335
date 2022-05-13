@@ -90,7 +90,7 @@ function [x_est, P_est, indices] = E7(odo, zind, z, V, W, x0, P0)
                     x_predicted = x_predicted + K * nu;
                     P_predicted = P_predicted - K * H_x * P_predicted;
                 else
-                    n = size(x_t,1);
+                    n = size(x_predicted,1);
                     % this is a new landmark, so add it to our state.
                     g = [x_predicted(1) + r*cos(x_predicted(3)+beta);
                          x_predicted(2) + r*sin(x_predicted(3)+beta)];
